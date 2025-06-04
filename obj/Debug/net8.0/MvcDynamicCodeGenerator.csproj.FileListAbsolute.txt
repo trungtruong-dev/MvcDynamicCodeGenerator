@@ -166,3 +166,4 @@ C:\Users\Trung2701\MvcDynamicCodeGenerator\obj\Debug\net8.0\refint\MvcDynamicCod
 C:\Users\Trung2701\MvcDynamicCodeGenerator\obj\Debug\net8.0\MvcDynamicCodeGenerator.pdb
 C:\Users\Trung2701\MvcDynamicCodeGenerator\obj\Debug\net8.0\MvcDynamicCodeGenerator.genruntimeconfig.cache
 C:\Users\Trung2701\MvcDynamicCodeGenerator\obj\Debug\net8.0\ref\MvcDynamicCodeGenerator.dll
+C:\Users\Trung2701\MvcDynamicCodeGenerator\obj\Debug\net8.0\MvcDynamicCodeGenerator.sourcelink.json

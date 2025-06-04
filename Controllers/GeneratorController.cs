@@ -25,82 +25,10 @@ namespace MvcDynamicCodeGenerator.Controllers
         [HttpGet]
         public IActionResult Index()
         {
-            var model = new SchemaGeneratorViewModel
-            {
-                RootNamespace = "MyProject.Generated",
-                DbContextName = "ApplicationDbContext",
-                GenerateIServices = true,
-                GenerateServices = true,
-                AsyncServiceOnly = true,
-                GenerateUnitTests = false
-            };
-
-            // Dữ liệu mẫu
-            var productsTable = new TableDefinitionViewModel
-            {
-                TableName = "Products",
-                Properties = new List<PropertyDefinitionViewModel>
-                {
-                    new PropertyDefinitionViewModel { PropertyName = "Id", DataType = "int", IsPrimaryKey = true, IsNullable = false },
-                    new PropertyDefinitionViewModel { PropertyName = "Name", DataType = "string", IsNullable = false, MaxLength = 255 }
-                }
-            };
-            model.Tables.Add(productsTable);
-
-            var categoriesTable = new TableDefinitionViewModel
-            {
-                TableName = "Categories",
-                Properties = new List<PropertyDefinitionViewModel>
-                {
-                    new PropertyDefinitionViewModel { PropertyName = "CategoryId", DataType = "int", IsPrimaryKey = true, IsNullable = false },
-                    new PropertyDefinitionViewModel { PropertyName = "CategoryName", DataType = "string", IsNullable = false, MaxLength = 100 }
-                }
-            };
-            model.Tables.Add(categoriesTable);
-
-            var ordersTable = new TableDefinitionViewModel
-            {
-                TableName = "Orders",
-                Properties = new List<PropertyDefinitionViewModel>
-                {
-                    new PropertyDefinitionViewModel { PropertyName = "OrderId", DataType = "int", IsPrimaryKey = true, IsNullable = false },
-                    new PropertyDefinitionViewModel
-                    {
-                        PropertyName = "ProductId",
-                        DataType = "int",
-                        IsNullable = false,
-                        IsForeignKey = true,
-                        ReferencedTableName = "Products",
-                        ReferencedPropertyName = "Id",
-                        NavigationPropertyName = "Product"
-                    },
-                    new PropertyDefinitionViewModel { PropertyName = "OrderDate", DataType = "DateTime", IsNullable = true },
-                    new PropertyDefinitionViewModel { PropertyName = "Quantity", DataType = "int", IsNullable = false }
-                }
-            };
-            model.Tables.Add(ordersTable);
-
-            var productDetailsTable = new TableDefinitionViewModel
-            {
-                TableName = "ProductDetails",
-                Properties = new List<PropertyDefinitionViewModel>
-                {
-                    new PropertyDefinitionViewModel { PropertyName = "DetailId", DataType = "int", IsPrimaryKey = true, IsNullable = false },
-                    new PropertyDefinitionViewModel
-                    {
-                        PropertyName = "ProductId",
-                        DataType = "int",
-                        IsNullable = false,
-                        IsForeignKey = true,
-                        ReferencedTableName = "Products",
-                        ReferencedPropertyName = "Id",
-                        NavigationPropertyName = "Product"
-                    },
-                    new PropertyDefinitionViewModel { PropertyName = "Description", DataType = "string", IsNullable = true, MaxLength = 500 }
-                }
-            };
-            model.Tables.Add(productDetailsTable);
-
+            var model = new SchemaGeneratorViewModel();
+            model.RootNamespace = "MyCompany.MyApp";
+            model.DbContextName = "AppDbContext";
+            // EntityNameSuffix is removed from NamingConventionOptionsViewModel, so no need to set it here.
             return View(model);
         }
 
@@ -108,111 +36,183 @@ namespace MvcDynamicCodeGenerator.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> GenerateSchema([FromForm] SchemaGeneratorViewModel model)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return View("Index", model);
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                    string modelStateErrors = string.Join("; ", errors);
+                    _logger.LogWarning("GenerateSchema: ModelState không hợp lệ. Lỗi: {Errors}", modelStateErrors);
+                    return Json(new { success = false, message = $"Dữ liệu không hợp lệ: {modelStateErrors}. Vui lòng kiểm tra lại các trường đã nhập." });
+                }
+
+                string jobId = Guid.NewGuid().ToString();
+
+                var validTables = model.Tables?.Where(t => !string.IsNullOrWhiteSpace(t.TableName) && t.Properties != null && t.Properties.Any()).ToList()
+                                 ?? new List<TableDefinitionViewModel>();
+
+                if (!validTables.Any())
+                {
+                    _logger.LogWarning("GenerateSchema: Không có bảng hợp lệ nào được định nghĩa. Số lượng bảng nhận được: {TableCount}", model.Tables?.Count ?? 0);
+                    JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusError, "Không có bảng hợp lệ nào được định nghĩa để tạo mã.", null);
+                    return Json(new { success = false, message = "Không có bảng hợp lệ nào được định nghĩa để tạo mã. Vui lòng thêm ít nhất một bảng với tên và các thuộc tính." });
+                }
+
+                JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusQueued, "Đang chờ xử lý...", null);
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusProcessing, "Đang phân tích và tạo mã...", null);
+                        _logger.LogInformation("[Job {JobId}] Bắt đầu tạo mã cho Namespace: {RootNamespace}", jobId, model.RootNamespace);
+
+                        string tempBaseDir = Path.Combine(Path.GetTempPath(), $"GeneratedCode_{jobId}");
+                        if (Directory.Exists(tempBaseDir)) Directory.Delete(tempBaseDir, true);
+                        Directory.CreateDirectory(tempBaseDir);
+
+                        // Define directory structure - "Entities" changed to "Models"
+                        string modelsDir = Path.Combine(tempBaseDir, "Models"); // Changed from entitiesDir
+                        string dataDir = Path.Combine(tempBaseDir, "Data");
+                        string repositoriesDir = Path.Combine(tempBaseDir, "Repositories");
+                        string repoInterfacesDir = Path.Combine(repositoriesDir, "Interfaces");
+                        string repoImplementationsDir = Path.Combine(repositoriesDir, "Implementations");
+                        string servicesDir = Path.Combine(tempBaseDir, "Services");
+                        string serviceInterfacesDir = Path.Combine(servicesDir, "Interfaces");
+                        string serviceImplementationsDir = Path.Combine(servicesDir, "Implementations");
+                        // string dtosDir = Path.Combine(tempBaseDir, "Dtos"); // DTOs are removed
+                        string extensionsDir = Path.Combine(tempBaseDir, "Extensions");
+                        string testsDir = Path.Combine(tempBaseDir, "Tests", $"{model.RootNamespace}.Tests");
+                        string repoTestsDir = Path.Combine(testsDir, "Repositories");
+                        string serviceTestsDir = Path.Combine(testsDir, "Services");
+
+                        Directory.CreateDirectory(modelsDir); // Changed from entitiesDir
+                        Directory.CreateDirectory(dataDir);
+                        Directory.CreateDirectory(repoInterfacesDir);
+                        Directory.CreateDirectory(repoImplementationsDir);
+
+                        if (model.GenerateIServices || model.GenerateServices)
+                        {
+                            Directory.CreateDirectory(serviceInterfacesDir);
+                            Directory.CreateDirectory(serviceImplementationsDir);
+                            // Directory.CreateDirectory(dtosDir); // DTOs are removed
+                        }
+                        if (model.GenerateDependencyInjectionExtensions) Directory.CreateDirectory(extensionsDir);
+                        if (model.GenerateUnitTests)
+                        {
+                            Directory.CreateDirectory(repoTestsDir);
+                            if (model.GenerateServices) Directory.CreateDirectory(serviceTestsDir);
+                        }
+
+                        var allInverseRelationships = _codeGeneratorService.AnalyzeInverseRelationships(validTables, model.NamingConventions);
+                        _logger.LogInformation("[Job {JobId}] Phân tích mối quan hệ hoàn tất.", jobId);
+
+                        foreach (var table in validTables)
+                        {
+                            // GenerateModelClass instead of GenerateEntityClass
+                            string modelCode = _codeGeneratorService.GenerateModelClass(table, model, allInverseRelationships);
+                            // No EntityNameSuffix
+                            string modelFileName = $"{_codeGeneratorService.ToPascalCase(table.TableName)}.cs"; 
+                            await System.IO.File.WriteAllTextAsync(Path.Combine(modelsDir, modelFileName), modelCode); // Use modelsDir
+                        }
+                        _logger.LogInformation("[Job {JobId}] Sinh Models hoàn tất.", jobId);
+
+                        string dbContextCode = _codeGeneratorService.GenerateDbContextClass(validTables, model, allInverseRelationships);
+                        await System.IO.File.WriteAllTextAsync(Path.Combine(dataDir, $"{_codeGeneratorService.ToPascalCase(model.DbContextName)}.cs"), dbContextCode);
+                        _logger.LogInformation("[Job {JobId}] Sinh DbContext hoàn tất.", jobId);
+
+                        string genericIRepoCode = _codeGeneratorService.GenerateGenericIRepository(model);
+                        await System.IO.File.WriteAllTextAsync(Path.Combine(repoInterfacesDir, "IRepository.cs"), genericIRepoCode);
+                        string genericRepoCode = _codeGeneratorService.GenerateGenericRepositoryClass(model);
+                        await System.IO.File.WriteAllTextAsync(Path.Combine(repoImplementationsDir, "Repository.cs"), genericRepoCode);
+                        _logger.LogInformation("[Job {JobId}] Sinh Generic Repository hoàn tất.", jobId);
+
+                        foreach (var table in validTables)
+                        {
+                            string modelNameBase = _codeGeneratorService.ToPascalCase(table.TableName); // No suffix
+
+                            string iSpecRepoCode = _codeGeneratorService.GenerateSpecificIRepository(table, model);
+                            string iSpecRepoFileName = $"{model.NamingConventions.RepositoryInterfacePrefix}{modelNameBase}{model.NamingConventions.RepositoryClassSuffix}.cs";
+                            await System.IO.File.WriteAllTextAsync(Path.Combine(repoInterfacesDir, iSpecRepoFileName), iSpecRepoCode);
+
+                            string specRepoCode = _codeGeneratorService.GenerateSpecificRepositoryClass(table, model);
+                            string specRepoFileName = $"{modelNameBase}{model.NamingConventions.RepositoryClassSuffix}.cs";
+                            await System.IO.File.WriteAllTextAsync(Path.Combine(repoImplementationsDir, specRepoFileName), specRepoCode);
+
+                            if (model.GenerateIServices || model.GenerateServices)
+                            {
+                                // DTO generation is removed
+                                // string dtoListCode = _codeGeneratorService.GenerateDtoClasses(table, model);
+                                // string dtoListFileName = $"{modelNameBase}Dtos.cs"; 
+                                // await System.IO.File.WriteAllTextAsync(Path.Combine(dtosDir, dtoListFileName), dtoListCode);
+
+                                if (model.GenerateIServices)
+                                {
+                                    string iServiceCode = _codeGeneratorService.GenerateIServiceInterface(table, model);
+                                    string iServiceFileName = $"{model.NamingConventions.ServiceInterfacePrefix}{modelNameBase}{model.NamingConventions.ServiceClassSuffix}.cs";
+                                    await System.IO.File.WriteAllTextAsync(Path.Combine(serviceInterfacesDir, iServiceFileName), iServiceCode);
+                                }
+                                if (model.GenerateServices)
+                                {
+                                    string serviceCode = _codeGeneratorService.GenerateServiceClass(table, model);
+                                    string serviceFileName = $"{modelNameBase}{model.NamingConventions.ServiceClassSuffix}.cs";
+                                    await System.IO.File.WriteAllTextAsync(Path.Combine(serviceImplementationsDir, serviceFileName), serviceCode);
+                                }
+                            }
+
+                            if (model.GenerateUnitTests)
+                            {
+                                string repoTestCode = _codeGeneratorService.GenerateRepositoryUnitTests(table, model);
+                                string repoTestFileName = $"{modelNameBase}{model.NamingConventions.RepositoryClassSuffix}Tests.cs";
+                                await System.IO.File.WriteAllTextAsync(Path.Combine(repoTestsDir, repoTestFileName), repoTestCode);
+
+                                if (model.GenerateServices)
+                                {
+                                    string serviceTestCode = _codeGeneratorService.GenerateServiceUnitTests(table, model);
+                                    string serviceTestFileName = $"{modelNameBase}{model.NamingConventions.ServiceClassSuffix}Tests.cs";
+                                    await System.IO.File.WriteAllTextAsync(Path.Combine(serviceTestsDir, serviceTestFileName), serviceTestCode);
+                                }
+                            }
+                        }
+                        _logger.LogInformation("[Job {JobId}] Sinh các thành phần cụ thể (Repositories, Services, Tests) hoàn tất.", jobId);
+
+                        if (model.GenerateDependencyInjectionExtensions)
+                        {
+                            string diCode = _codeGeneratorService.GenerateDependencyInjectionExtensions(validTables, model);
+                            await System.IO.File.WriteAllTextAsync(Path.Combine(extensionsDir, "DependencyInjectionExtensions.cs"), diCode);
+                            _logger.LogInformation("[Job {JobId}] Sinh Dependency Injection Extensions hoàn tất.", jobId);
+                        }
+
+                        JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusProcessing, "Đang nén file...", null);
+                        await Task.Delay(500);
+
+                        string zipFileName = $"GeneratedCode_{model.RootNamespace.Replace(".", "_")}_{jobId.Substring(0, 8)}.zip";
+                        string zipFilePath = Path.Combine(Path.GetTempPath(), zipFileName);
+                        if (System.IO.File.Exists(zipFilePath)) System.IO.File.Delete(zipFilePath);
+                        ZipFile.CreateFromDirectory(tempBaseDir, zipFilePath);
+
+                        JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusCompleted, "Mã đã được tạo thành công!", zipFileName);
+                        _logger.LogInformation("[Job {JobId}] Hoàn tất tạo mã và tạo file ZIP: {ZipFileName}", jobId, zipFileName);
+
+                        Directory.Delete(tempBaseDir, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "[Job {JobId}] Đã xảy ra lỗi nghiêm trọng trong tác vụ nền.", jobId);
+                        JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusError, $"Lỗi trong quá trình tạo mã nền: {ex.Message}", null);
+                    }
+                });
+
+                await Task.Yield();
+                return Json(new { success = true, jobId = jobId, message = "Quá trình tạo mã đã được khởi tạo. Theo dõi trạng thái." });
             }
-
-            string jobId = Guid.NewGuid().ToString();
-            JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusQueued, "Đang chờ xử lý...", null);
-
-            var validTables = model.Tables.Where(t => !string.IsNullOrWhiteSpace(t.TableName)).ToList();
-
-            _ = Task.Run(async () =>
+            catch (Exception ex)
             {
-                try
-                {
-                    JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusProcessing, "Đang tạo mã...", null);
-                    _logger.LogInformation("[Job {JobId}] Bắt đầu tạo mã cho Namespace: {RootNamespace}", jobId, model.RootNamespace);
-                    _logger.LogInformation("[Job {JobId}] Tên DbContext: {DbContextName}", jobId, model.DbContextName);
-                    _logger.LogInformation("[Job {JobId}] Tổng số bảng hợp lệ: {TableCount}", jobId, validTables.Count);
-
-                    string tempBaseDir = Path.Combine(Path.GetTempPath(), $"GeneratedCode_{jobId}");
-                    Directory.CreateDirectory(tempBaseDir);
-
-                    // Create subdirectories
-                    string entitiesDir = Path.Combine(tempBaseDir, "Entities");
-                    string dataDir = Path.Combine(tempBaseDir, "Data");
-                    string repositoriesDir = Path.Combine(tempBaseDir, "Repositories");
-                    string repositoryInterfacesDir = Path.Combine(repositoriesDir, "Interfaces"); // NEW: Interfaces sub-directory
-                    string repositoryImplementationsDir = Path.Combine(repositoriesDir, "Implementations"); // NEW: Implementations sub-directory
-                    
-                    Directory.CreateDirectory(entitiesDir);
-                    Directory.CreateDirectory(dataDir);
-                    Directory.CreateDirectory(repositoriesDir);
-                    Directory.CreateDirectory(repositoryInterfacesDir); // Create Interface directory
-                    Directory.CreateDirectory(repositoryImplementationsDir); // Create Implementations directory
-
-
-                    // Giai đoạn 1: Phân tích mối quan hệ
-                    var allInverseRelationships = _codeGeneratorService.AnalyzeInverseRelationships(validTables);
-
-                    // Giai đoạn 2: Sinh mã cho từng Entity
-                    foreach (var table in validTables)
-                    {
-                        string entityCode = _codeGeneratorService.GenerateEntityClass(table, model.RootNamespace, allInverseRelationships);
-                        string entityFilePath = Path.Combine(entitiesDir, $"{_codeGeneratorService.ToPascalCase(table.TableName)}.cs");
-                        await System.IO.File.WriteAllTextAsync(entityFilePath, entityCode);
-                        _logger.LogInformation("[Job {JobId}] Đã sinh Entity: {TableName}.cs", jobId, table.TableName);
-                    }
-
-                    // Sinh mã cho DbContext
-                    string dbContextCode = _codeGeneratorService.GenerateDbContextClass(validTables, model.RootNamespace);
-                    string dbContextFilePath = Path.Combine(dataDir, $"{model.DbContextName}.cs");
-                    await System.IO.File.WriteAllTextAsync(dbContextFilePath, dbContextCode);
-                    _logger.LogInformation("[Job {JobId}] Đã sinh DbContext: {DbContextName}.cs", jobId, model.DbContextName);
-
-                    // NEW: Sinh mã cho Generic IRepository (base interface)
-                    string genericIRepositoryCode = _codeGeneratorService.GenerateGenericIRepository(model.RootNamespace);
-                    string genericIRepositoryFilePath = Path.Combine(repositoryInterfacesDir, "IRepository.cs");
-                    await System.IO.File.WriteAllTextAsync(genericIRepositoryFilePath, genericIRepositoryCode);
-                    _logger.LogInformation("[Job {JobId}] Đã sinh Generic IRepository.cs", jobId);
-
-                    // NEW: Sinh mã cho Generic Repository (base implementation)
-                    string genericRepositoryCode = _codeGeneratorService.GenerateGenericRepositoryClass(model.RootNamespace, model.DbContextName);
-                    string genericRepositoryFilePath = Path.Combine(repositoryImplementationsDir, "Repository.cs");
-                    await System.IO.File.WriteAllTextAsync(genericRepositoryFilePath, genericRepositoryCode);
-                    _logger.LogInformation("[Job {JobId}] Đã sinh Generic Repository.cs", jobId);
-
-                    // NEW: Sinh mã cho Specific I[Entity]Repository và [Entity]Repository cho mỗi bảng
-                    foreach (var table in validTables)
-                    {
-                        string entityClassName = _codeGeneratorService.ToPascalCase(table.TableName);
-
-                        string specificIRepositoryCode = _codeGeneratorService.GenerateSpecificIRepository(table, model.RootNamespace);
-                        string specificIRepositoryFilePath = Path.Combine(repositoryInterfacesDir, $"I{entityClassName}Repository.cs");
-                        await System.IO.File.WriteAllTextAsync(specificIRepositoryFilePath, specificIRepositoryCode);
-                        _logger.LogInformation("[Job {JobId}] Đã sinh I{EntityName}Repository.cs", jobId, entityClassName);
-
-                        string specificRepositoryCode = _codeGeneratorService.GenerateSpecificRepositoryClass(table, model.RootNamespace, model.DbContextName);
-                        string specificRepositoryFilePath = Path.Combine(repositoryImplementationsDir, $"{entityClassName}Repository.cs");
-                        await System.IO.File.WriteAllTextAsync(specificRepositoryFilePath, specificRepositoryCode);
-                        _logger.LogInformation("[Job {JobId}] Đã sinh {EntityName}Repository.cs", jobId, entityClassName);
-                    }
-                    
-                    // ... (Logic sinh IServices, Services, Unit Tests sẽ được thêm vào đây sau) ...
-
-                    await Task.Delay(2000); // Simulate some processing time
-
-                    string zipFileName = $"GeneratedCode_{jobId}.zip";
-                    string zipFilePath = Path.Combine(Path.GetTempPath(), zipFileName);
-                    ZipFile.CreateFromDirectory(tempBaseDir, zipFilePath);
-
-                    JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusCompleted, "Mã đã được tạo thành công!", zipFileName);
-                    _logger.LogInformation("[Job {JobId}] Hoàn tất tạo mã và tạo file ZIP: {ZipFileName}", jobId, zipFileName);
-
-                    Directory.Delete(tempBaseDir, true);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[Job {JobId}] Đã xảy ra lỗi trong quá trình tạo mã.", jobId);
-                    JobStatusManager.SetJobStatus(jobId, JobStatusManager.StatusError, $"Đã xảy ra lỗi: {ex.Message}", null);
-                }
-            });
-            
-            await Task.Yield();
-
-            return Json(new { success = true, jobId = jobId, message = "Quá trình tạo mã đã được khởi tạo." });
+                _logger.LogError(ex, "GenerateSchema: Lỗi không mong muốn trước khi bắt đầu tác vụ nền.");
+                string errorJobId = Guid.NewGuid().ToString();
+                JobStatusManager.SetJobStatus(errorJobId, JobStatusManager.StatusError, $"Lỗi máy chủ không mong muốn: {ex.Message}. Không thể bắt đầu tạo mã.", null);
+                return Json(new { success = false, message = $"Lỗi máy chủ không mong muốn: {ex.Message}. Không thể bắt đầu tạo mã.", jobId = errorJobId });
+            }
         }
 
         [HttpGet]
@@ -223,7 +223,6 @@ namespace MvcDynamicCodeGenerator.Controllers
             {
                 return NotFound(new { status = JobStatusManager.StatusNotFound, message = "Không tìm thấy công việc." });
             }
-
             return Json(new
             {
                 status = statusData.Value.Status,
@@ -235,15 +234,29 @@ namespace MvcDynamicCodeGenerator.Controllers
         [HttpGet]
         public IActionResult DownloadGeneratedCode(string fileName)
         {
+            if (string.IsNullOrWhiteSpace(fileName) || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                 _logger.LogWarning("Yêu cầu tải file với tên không hợp lệ: {FileName}", fileName);
+                return BadRequest("Tên file không hợp lệ.");
+            }
+
             string filePath = Path.Combine(Path.GetTempPath(), fileName);
             if (!System.IO.File.Exists(filePath))
             {
-                return NotFound($"File '{fileName}' không tìm thấy hoặc đã bị xóa.");
+                _logger.LogWarning("File không tồn tại để tải về: {FilePath}", filePath);
+                return NotFound($"File '{fileName}' không tìm thấy hoặc đã bị xóa. Vui lòng thử tạo lại.");
             }
-
-            var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-
-            return File(stream, "application/zip", fileName);
+            
+            try
+            {
+                var fileBytes = System.IO.File.ReadAllBytes(filePath);
+                return File(fileBytes, "application/zip", fileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi đọc file ZIP để tải về: {FilePath}", filePath);
+                return StatusCode(500, "Lỗi khi đọc file ZIP.");
+            }
         }
     }
 
