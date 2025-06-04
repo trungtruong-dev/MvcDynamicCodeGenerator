@@ -1,0 +1,1095 @@
+@model MvcDynamicCodeGenerator.Models.SchemaGeneratorViewModel
+@using Microsoft.AspNetCore.Mvc.Rendering
+@using System.Linq
+
+@{
+    ViewData["Title"] = "Công Cụ Tạo Schema, Entity & Service EF Core";
+
+    var dataTypeOptions = new List<SelectListItem>
+    {
+        new SelectListItem { Value = "string", Text = "string" }, new SelectListItem { Value = "int", Text = "int" },
+        new SelectListItem { Value = "long", Text = "long" }, new SelectListItem { Value = "bool", Text = "bool" },
+        new SelectListItem { Value = "DateTime", Text = "DateTime" }, new SelectListItem { Value = "decimal", Text = "decimal" },
+        new SelectListItem { Value = "Guid", Text = "Guid" }, new SelectListItem { Value = "double", Text = "double" },
+        new SelectListItem { Value = "float", Text = "float" }, new SelectListItem { Value = "byte[]", Text = "byte[] (binary)" }
+    };
+    var dataTypeOptionsHtml = "";
+    foreach (var option in dataTypeOptions)
+    {
+        dataTypeOptionsHtml += $"<option value=\"{option.Value}\">{option.Text}</option>";
+    }
+}
+
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+<style>
+    /* CSS của bạn */
+    .table-def { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; background-color: #f9f9f9; }
+    .property-def { padding: 10px; border: 1px solid #eee; margin-bottom: 10px; background-color: #fff; overflow: visible; }
+    .property-def .card-header { padding: 0.5rem 1rem; background-color: #f8f9fa; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+    .property-def .card-header:hover { background-color: #e9ecef; }
+    .property-def .card-header .row { flex-grow: 1; }
+    .property-def .card-body { padding: 1rem; }
+    .grab-handle { cursor: grab; }
+    .property-def .card-header .form-check { margin-bottom: 0 !important; padding-left: 1.5em; }
+    .fk-options, .adv-options { margin-top: 0.5rem; padding-left: 15px; border-left: 2px solid #007bff; }
+    .accordion-button:not(.collapsed) { color: #0c63e4; background-color: #e7f1ff; }
+    .property-def .card-header .select2-container { width: 100% !important; margin-bottom: 0; }
+    .validation-prop-group, .config-prop-group { margin-top: 0.5rem; }
+    .prop-col { margin-bottom: 0.5rem; }
+    #jobStatus { margin-top: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; background-color: #f0f0f0; }
+    .status-processing { color: orange; }
+    .status-completed { color: green; }
+    .status-failed { color: red; }
+    .card { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); border-radius: 0.375rem; border: none; }
+    .table-def { background-color: #fdfdfd; }
+    .table-def .card-header.bg-light { background-color: #f8f9fa !important; border-bottom: 1px solid #eff2f5; }
+    .property-def .card-header { padding: 0.65rem 1rem; transition: background-color 0.2s ease-in-out; }
+    .property-def .card-header .form-control-sm, .property-def .card-header .form-select-sm { font-size: 0.85rem; }
+    .property-def .card-header .form-check-label { font-size: 0.85rem; padding-top: 0.1rem; }
+    .property-def .grab-handle { color: #adb5bd; margin-right: 0.75rem !important; }
+    .property-def .accordion .accordion-item { border-color: #e9ecef; }
+    .property-def .accordion .accordion-button { padding: 0.75rem 1.25rem; font-size: 0.9rem; font-weight: 500; }
+    .property-def .accordion .accordion-button:not(.collapsed) { background-color: #f0f6ff; color: #0759ce; box-shadow: none; }
+    .property-def .accordion .accordion-body { padding: 1rem 1.25rem; background-color: #fcfdff; }
+    .btn { transition: all 0.2s ease-in-out; letter-spacing: 0.025em; }
+    .btn-outline-danger:hover, .btn-outline-primary:hover, .btn-outline-info:hover { color: #fff !important; }
+    #jobStatus { margin-top: 25px; padding: 20px; border: 1px solid #dee2e6; border-radius: 0.375rem; background-color: #f8f9fa; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    #jobStatus h4 { margin-bottom: 1rem; font-weight: 500; color: #212529; }
+    #jobStatus #statusMessage { font-size: 1rem; margin-bottom: 1.25rem; font-weight: 500; }
+    #jobStatus .progress { height: 1.25rem; font-size: 0.8rem; margin-bottom: 1.25rem; border-radius: 0.375rem; }
+    #jobStatus #downloadLink.btn { font-weight: 500; padding: 0.5rem 1rem; }
+</style>
+
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white"><h2 class="mb-0">@ViewData["Title"]</h2></div>
+        <div class="card-body">
+            <p class="card-text">Định nghĩa cấu trúc database, công cụ sẽ tạo Entity, DbContext, Service và Interface Service.</p>
+            <hr />
+            <form id="generateSchemaForm" asp-action="GenerateSchema" method="post">
+                @Html.AntiForgeryToken()
+                <div class="mb-3">
+                    <button type="button" id="viewDiagramBtn" class="btn btn-outline-secondary"><i class="fas fa-project-diagram me-1"></i>Xem Sơ đồ CSDL</button>
+                </div>
+                <div id="diagramContainer" class="mermaid mb-4" style="display:none; border: 1px solid #ddd; padding: 15px; border-radius: 5px; background-color: #fff;"></div>
+
+                <div asp-validation-summary="All" class="alert alert-danger" role="alert" style="@(ViewContext.ModelState.IsValid ? "display:none;" : "")"></div>
+
+                <div class="row mb-3 align-items-end">
+                    <div class="col-md-3">
+                        <label asp-for="RootNamespace" class="form-label fw-bold"></label>
+                        <input asp-for="RootNamespace" class="form-control" />
+                        <span asp-validation-for="RootNamespace" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="DbContextName" class="form-label fw-bold"></label>
+                        <input asp-for="DbContextName" class="form-control" />
+                        <span asp-validation-for="DbContextName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check form-switch">
+                            <input asp-for="GenerateIServices" class="form-check-input" type="checkbox" />
+                            <label asp-for="GenerateIServices" class="form-check-label"></label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input asp-for="GenerateServices" class="form-check-input" type="checkbox" />
+                            <label asp-for="GenerateServices" class="form-check-label"></label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check form-switch">
+                            <input asp-for="AsyncServiceOnly" class="form-check-input" type="checkbox" />
+                            <label asp-for="AsyncServiceOnly" class="form-check-label"></label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input asp-for="GenerateUnitTests" class="form-check-input" type="checkbox" />
+                            <label asp-for="GenerateUnitTests" class="form-check-label"></label>
+                        </div>
+                    </div>
+                </div>
+                <hr />
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="tableSearchInput" class="form-label">Tìm kiếm Bảng:</label>
+                        <input type="text" id="tableSearchInput" class="form-control" placeholder="Nhập tên bảng để lọc...">
+                    </div>
+                </div>
+
+                <div id="tablesContainer">
+                    @* Render existing tables from Model.Tables on initial load *@
+                    @for (int i = 0; i < Model.Tables.Count; i++)
+                    {
+                        var table = Model.Tables[i];
+                        <div class="card table-def mb-4" data-table-index="@i">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h4 class="mb-0">Bảng @(i + 1): <span class="table-name-display fw-normal">@(table.TableName ?? $"Bảng {i + 1}")</span></h4>
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-table-btn" @(Model.Tables.Count <= 1 ? "disabled" : "")><i class="fas fa-trash-alt me-1"></i>Xóa Bảng</button>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="Tables_@(i)__TableName" class="form-label">Tên Bảng</label>
+                                    <input type="text" id="Tables_@(i)__TableName" name="Tables[@i].TableName" value="@table.TableName" class="form-control table-name-input" placeholder="Products" />
+                                    <span asp-validation-for="Tables[i].TableName" class="text-danger"></span>
+                                </div>
+                                <div class="row mt-3 mb-2">
+                                    <div class="col-md-6"><h5 class="mb-0">Thuộc tính:</h5></div>
+                                    <div class="col-md-6">
+                                        <input type="text" class="form-control form-control-sm property-search-input" placeholder="Tìm thuộc tính trong bảng này..." data-table-index="@i">
+                                    </div>
+                                </div>
+                                <div class="properties-container" data-table-index="@i">
+                                    @* Render existing properties for each table *@
+                                    @for (int j = 0; j < table.Properties.Count; j++)
+                                    {
+                                        var prop = table.Properties[j];
+                                        var baseId = $"Tables_{i}__Properties_{j}__";
+                                        var accordionParentId = $"accordionProperty_{i}_{j}";
+                                        var propertyCardId = $"propertyDef_{i}_{j}";
+                                        var mainCollapseId = $"collapseProperty_{i}_{j}";
+                                        var mainHeadingId = $"headingProperty_{i}_{j}";
+
+                                        <div class="card property-def mb-3" data-property-index="@j" id="@propertyCardId">
+                                            <div class="card-header" id="@mainHeadingId" data-bs-toggle="collapse" data-bs-target="#@mainCollapseId" aria-expanded="false" aria-controls="@mainCollapseId">
+                                                <i class="fas fa-grip-vertical grab-handle me-2"></i>
+                                                <div class="row flex-grow-1 align-items-center g-2">
+                                                    <div class="col-md-4 col-sm-6 prop-col">
+                                                        <label for="@(baseId)PropertyName" class="form-label visually-hidden">Tên</label>
+                                                        <input type="text" id="@(baseId)PropertyName" name="Tables[@i].Properties[@j].PropertyName" class="form-control form-control-sm" value="@prop.PropertyName" placeholder="Tên Thuộc Tính" />
+                                                        <span asp-validation-for="Tables[i].Properties[j].PropertyName" class="text-danger"></span>
+                                                    </div>
+                                                    <div class="col-md-3 col-sm-6 prop-col">
+                                                        <label for="@(baseId)DataType" class="form-label visually-hidden">Kiểu</label>
+                                                        <select id="@(baseId)DataType" name="Tables[@i].Properties[@j].DataType" asp-items="dataTypeOptions" class="form-select form-select-sm data-type-selector"></select>
+                                                        <span asp-validation-for="Tables[i].Properties[j].DataType" class="text-danger"></span>
+                                                    </div>
+                                                    <div class="col-md-2 col-sm-4 prop-col">
+                                                        <div class="form-check form-switch">
+                                                            <input id="@(baseId)IsPrimaryKey" name="Tables[@i].Properties[@j].IsPrimaryKey" class="form-check-input" type="checkbox" @(prop.IsPrimaryKey ? "checked" : "") value="true" />
+                                                            <input type="hidden" name="Tables[@i].Properties[@j].IsPrimaryKey" value="false" />
+                                                            <label for="@(baseId)IsPrimaryKey" class="form-check-label">PK?</label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-2 col-sm-4 prop-col">
+                                                        <div class="form-check form-switch">
+                                                            <input id="@(baseId)IsNullable" name="Tables[@i].Properties[@j].IsNullable" class="form-check-input" type="checkbox" @(prop.IsNullable ? "checked" : "") value="true" />
+                                                            <input type="hidden" name="Tables[@i].Properties[@j].IsNullable" value="false" />
+                                                            <label for="@(baseId)IsNullable" class="form-check-label">Null?</label>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button type="button" class="btn btn-sm btn-outline-danger remove-property-btn ms-2" @(table.Properties.Count <= 1 ? "disabled" : "")><i class="fas fa-times"></i></button>
+                                            </div>
+                                            <div id="@mainCollapseId" class="card-body accordion-collapse collapse" aria-labelledby="@mainHeadingId" data-bs-parent="#tablesContainer">
+                                                <div class="accordion mt-3" id="@accordionParentId">
+                                                    <div class="accordion-item">
+                                                        <h2 class="accordion-header" id="headingFk_@(i)_@(j)">
+                                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFk_@(i)_@(j)" aria-expanded="@(prop.IsForeignKey ? "true" : "false")" aria-controls="collapseFk_@(i)_@(j)">
+                                                                Khóa Ngoại & Điều Hướng
+                                                            </button>
+                                                        </h2>
+                                                        <div id="collapseFk_@(i)_@(j)" class="accordion-collapse collapse @(prop.IsForeignKey ? "show" : "")" aria-labelledby="headingFk_@(i)_@(j)" data-bs-parent="#@accordionParentId">
+                                                            <div class="accordion-body">
+                                                                <div class="form-check form-switch">
+                                                                    <input id="@(baseId)IsForeignKey" name="Tables[@i].Properties[@j].IsForeignKey" class="form-check-input fk-checkbox" type="checkbox" @(prop.IsForeignKey ? "checked" : "") value="true" data-table-index="@i" data-property-index="@j" />
+                                                                    <input type="hidden" name="Tables[@i].Properties[@j].IsForeignKey" value="false" />
+                                                                    <label for="@(baseId)IsForeignKey" class="form-check-label">Là Khóa Ngoại?</label>
+                                                                </div>
+                                                                <div class="fk-options mt-2" style="@(prop.IsForeignKey ? "" : "display:none;")" id="fkOptions_@(i)_@(j)">
+                                                                    <div class="row">
+                                                                        <div class="col-md-6">
+                                                                            <label for="@(baseId)ReferencedTableName" class="form-label">Bảng Tham Chiếu</label>
+                                                                            <select id="@(baseId)ReferencedTableName" name="Tables[@i].Properties[@j].ReferencedTableName" class="form-select form-select-sm referenced-table-dropdown">
+                                                                                <option value="">-- Chọn Bảng --</option>
+                                                                                @if (!string.IsNullOrEmpty(prop.ReferencedTableName))
+                                                                                {
+                                                                                    <option value="@prop.ReferencedTableName" selected>@prop.ReferencedTableName</option>
+                                                                                }
+                                                                            </select>
+                                                                        </div>
+                                                                        <div class="col-md-6">
+                                                                            <label for="@(baseId)NavigationPropertyName" class="form-label">Tên Thuộc Tính Điều Hướng</label>
+                                                                            <input type="text" id="@(baseId)NavigationPropertyName" name="Tables[@i].Properties[@j].NavigationPropertyName" class="form-control form-control-sm nav-prop-name-input" value="@prop.NavigationPropertyName" placeholder="Tự động nếu trống" />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="accordion-item">
+                                                        <h2 class="accordion-header" id="headingValidation_@(i)_@(j)">
+                                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseValidation_@(i)_@(j)" aria-expanded="false" aria-controls="collapseValidation_@(i)_@(j)">
+                                                                Tùy Chọn Xác Thực (Validation)
+                                                            </button>
+                                                        </h2>
+                                                        <div id="collapseValidation_@(i)_@(j)" class="accordion-collapse collapse" aria-labelledby="headingValidation_@(i)_@(j)" data-bs-parent="#@accordionParentId">
+                                                            <div class="accordion-body">
+                                                                <div class="row validation-prop-group g-2">
+                                                                    <div class="col-md-3 prop-col string-validation" style="@(prop.DataType == "string" ? "" : "display:none;")">
+                                                                        <label for="@(baseId)MaxLength" class="form-label">Độ dài Max (String)</label>
+                                                                        <input type="number" min="1" id="@(baseId)MaxLength" name="Tables[@i].Properties[@j].MaxLength" class="form-control form-control-sm" value="@prop.MaxLength" placeholder="Ví dụ: 255" />
+                                                                    </div>
+                                                                    <div class="col-md-3 prop-col string-validation" style="@(prop.DataType == "string" ? "" : "display:none;")">
+                                                                        <label for="@(baseId)MinLength" class="form-label">Độ dài Min (String)</label>
+                                                                        <input type="number" min="0" id="@(baseId)MinLength" name="Tables[@i].Properties[@j].MinLength" class="form-control form-control-sm" value="@prop.MinLength" placeholder="Ví dụ: 0" />
+                                                                    </div>
+                                                                    <div class="col-md-3 prop-col numeric-validation" style="@(new[] {"int", "long", "decimal", "double", "float"}.Contains(prop.DataType) ? "" : "display:none;")">
+                                                                        <label for="@(baseId)RangeMin" class="form-label">Giá trị Min (Số)</label>
+                                                                        <input type="number" step="any" id="@(baseId)RangeMin" name="Tables[@i].Properties[@j].RangeMin" class="form-control form-control-sm" value="@prop.RangeMin" placeholder="Ví dụ: 0" />
+                                                                    </div>
+                                                                    <div class="col-md-3 prop-col numeric-validation" style="@(new[] {"int", "long", "decimal", "double", "float"}.Contains(prop.DataType) ? "" : "display:none;")">
+                                                                        <label for="@(baseId)RangeMax" class="form-label">Giá trị Max (Số)</label>
+                                                                        <input type="number" step="any" id="@(baseId)RangeMax" name="Tables[@i].Properties[@j].RangeMax" class="form-control form-control-sm" value="@prop.RangeMax" placeholder="Ví dụ: 100" />
+                                                                    </div>
+                                                                </div>
+                                                                <div class="row validation-prop-group mt-2 g-2">
+                                                                    <div class="col-md-3 col-sm-6 prop-col">
+                                                                        <div class="form-check form-switch">
+                                                                            <input id="@(baseId)IsEmailAddress" name="Tables[@i].Properties[@j].IsEmailAddress" class="form-check-input" type="checkbox" @(prop.IsEmailAddress ? "checked" : "") value="true" />
+                                                                            <input type="hidden" name="Tables[@i].Properties[@j].IsEmailAddress" value="false" />
+                                                                            <label for="@(baseId)IsEmailAddress" class="form-check-label">Là Email?</label>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-3 col-sm-6 prop-col">
+                                                                        <div class="form-check form-switch">
+                                                                            <input id="@(baseId)IsPhoneNumber" name="Tables[@i].Properties[@j].IsPhoneNumber" class="form-check-input" type="checkbox" @(prop.IsPhoneNumber ? "checked" : "") value="true" />
+                                                                            <input type="hidden" name="Tables[@i].Properties[@j].IsPhoneNumber" value="false" />
+                                                                            <label for="@(baseId)IsPhoneNumber" class="form-check-label">Là SĐT?</label>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-3 col-sm-6 prop-col">
+                                                                        <div class="form-check form-switch">
+                                                                            <input id="@(baseId)IsUrl" name="Tables[@i].Properties[@j].IsUrl" class="form-check-input" type="checkbox" @(prop.IsUrl ? "checked" : "") value="true" />
+                                                                            <input type="hidden" name="Tables[@i].Properties[@j].IsUrl" value="false" />
+                                                                            <label for="@(baseId)IsUrl" class="form-check-label">Là URL?</label>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-3 col-sm-6 prop-col">
+                                                                        <label for="@(baseId)RegexPattern" class="form-label">Regex Pattern</label>
+                                                                        <input type="text" id="@(baseId)RegexPattern" name="Tables[@i].Properties[@j].RegexPattern" class="form-control form-control-sm" value="@prop.RegexPattern" placeholder="Ví dụ: ^[a-z0-9]+$" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="accordion-item">
+                                                        <h2 class="accordion-header" id="headingConfig_@(i)_@(j)">
+                                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseConfig_@(i)_@(j)" aria-expanded="false" aria-controls="collapseConfig_@(i)_@(j)">
+                                                                Tùy Chọn Cấu Hình CSDL
+                                                            </button>
+                                                        </h2>
+                                                        <div id="collapseConfig_@(i)_@(j)" class="accordion-collapse collapse" aria-labelledby="headingConfig_@(i)_@(j)" data-bs-parent="#@accordionParentId">
+                                                            <div class="accordion-body">
+                                                                <div class="row config-prop-group g-2">
+                                                                    <div class="col-md-4 prop-col">
+                                                                        <label for="@(baseId)ColumnTypeName" class="form-label">Kiểu CSDL (ColumnType)</label>
+                                                                        <input type="text" id="@(baseId)ColumnTypeName" name="Tables[@i].Properties[@j].ColumnTypeName" class="form-control form-control-sm" value="@prop.ColumnTypeName" placeholder="ví dụ: decimal(18,2)" />
+                                                                    </div>
+                                                                    <div class="col-md-4 prop-col d-flex align-items-end">
+                                                                        <div class="form-check form-switch mb-2 byte-array-option" style="@(prop.DataType == "byte[]" ? "" : "display:none;")">
+                                                                            <input id="@(baseId)IsTimestamp" name="Tables[@i].Properties[@j].IsTimestamp" class="form-check-input" type="checkbox" @(prop.IsTimestamp ? "checked" : "") value="true" />
+                                                                            <input type="hidden" name="Tables[@i].Properties[@j].IsTimestamp" value="false" />
+                                                                            <label for="@(baseId)IsTimestamp" class="form-check-label">RowVersion?</label>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-4 prop-col d-flex align-items-end">
+                                                                        <div class="form-check form-switch mb-2">
+                                                                            <input id="@(baseId)IsConcurrencyToken" name="Tables[@i].Properties[@j].IsConcurrencyToken" class="form-check-input" type="checkbox" @(prop.IsConcurrencyToken ? "checked" : "") value="true" />
+                                                                            <input type="hidden" name="Tables[@i].Properties[@j].IsConcurrencyToken" value="false" />
+                                                                            <label for="@(baseId)IsConcurrencyToken" class="form-check-label">Concurrency Token?</label>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary add-property-btn mt-3" data-table-index="@i"><i class="fas fa-plus me-1"></i>Thêm Thuộc Tính</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <button type="button" id="addTableBtn" class="btn btn-info mt-3 mb-3"><i class="fas fa-plus-circle me-1"></i>Thêm Bảng Mới</button>
+                <div class="mt-4">
+                    <button type="submit" id="generateBtn" class="btn btn-success btn-lg">
+                        <i class="fas fa-cogs me-2"></i>Tạo Mã
+                    </button>
+                </div>
+            </form>
+            <div id="jobStatus" style="display:none;">
+                <h4>Trạng thái tạo mã:</h4>
+                <p id="statusMessage">Đang chờ...</p>
+                <div class="progress" style="display:none;">
+                    <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <a id="downloadLink" href="#" class="btn btn-primary mt-2" style="display:none;">Tải File ZIP</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        const dataTypeOptionsHtml = `@Html.Raw(dataTypeOptionsHtml)`;
+
+        // Helper function to get all defined table names
+        function getDefinedTableNames(currentTableIndex) {
+            let names = [];
+            $('#tablesContainer .table-def').each(function (idx) {
+                let tableName = $(this).find('.table-name-input').val();
+                if (tableName) { names.push(tableName); }
+            });
+            return names;
+        }
+
+        // Helper function to get the primary key data type of a given table name
+        function getPrimaryKeyDataType(tableName) {
+            let pkDataType = 'int'; // Default if not found
+            const $targetTable = $(`#tablesContainer .table-def .table-name-input[value="${tableName}"]`).closest('.table-def');
+            if ($targetTable.length) {
+                // Find the first PK property in the target table
+                const $pkProperty = $targetTable.find('.properties-container .property-def input[name$=".IsPrimaryKey"][type="checkbox"]:checked').first().closest('.property-def');
+                if ($pkProperty.length) {
+                    pkDataType = $pkProperty.find('select[name$=".DataType"]').val();
+                }
+            }
+            const validSystemDataTypes = ["string", "int", "long", "bool", "DateTime", "decimal", "Guid", "double", "float", "byte[]"];
+            return validSystemDataTypes.includes(pkDataType) ? pkDataType : 'int';
+        }
+
+        // Populates the referenced table dropdown with available table names
+        function populateReferencedTableDropdown(dropdownElement, currentTableIndex) {
+            if ($(dropdownElement).data('select2')) {
+                $(dropdownElement).select2('destroy');
+            }
+
+            let definedTables = getDefinedTableNames(currentTableIndex);
+            let currentValue = $(dropdownElement).val();
+            $(dropdownElement).html('<option value="">-- Chọn Bảng --</option>');
+            definedTables.forEach(name => { $(dropdownElement).append($('<option>', { value: name, text: name })); });
+            
+            if (currentValue && definedTables.includes(currentValue)) {
+                $(dropdownElement).val(currentValue);
+            }
+
+            $(dropdownElement).select2({ theme: "bootstrap-5", dropdownParent: $(dropdownElement).closest('.fk-options') });
+            $(dropdownElement).trigger('change');
+        }
+
+        // Updates all "referenced table" dropdowns across all properties and tables
+        function updateAllReferencedTableDropdowns() {
+            $('#tablesContainer .table-def').each(function (tableIdx) {
+                $(this).find('.referenced-table-dropdown').each(function () { populateReferencedTableDropdown(this, tableIdx); });
+            });
+        }
+
+        // Toggles visibility of validation and config fields based on selected data type
+        function toggleValidationAndConfigFields(propertyElement, selectedDataType) {
+            const stringFields = $(propertyElement).find('.string-validation');
+            const numericFields = $(propertyElement).find('.numeric-validation');
+            const byteArrayOptions = $(propertyElement).find('.byte-array-option');
+
+            stringFields.toggle(selectedDataType === 'string');
+            numericFields.toggle(['int', 'long', 'decimal', 'double', 'float'].includes(selectedDataType));
+            byteArrayOptions.toggle(selectedDataType === 'byte[]');
+        }
+
+        // Updates names, IDs, labels, validation messages, and initializes Select2/toggles for a single property
+        function updatePropertyControls(tableIndex, propertyIndex, propertyElement) {
+            $(propertyElement).attr('data-property-index', propertyIndex);
+
+            // Using general attribute selectors to catch all related elements
+            $(propertyElement).find('[name^="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__]"]').each(function() {
+                const oldName = $(this).attr('name');
+                const newName = oldName.replace(/Tables\[__TABLE_INDEX__\]\.Properties\[__PROP_INDEX__\]/, `Tables[${tableIndex}].Properties[${propertyIndex}]`);
+                $(this).attr('name', newName);
+            });
+
+            $(propertyElement).find('[id^="Tables___TABLE_INDEX____Properties___PROP_INDEX__"]').each(function() {
+                const oldId = $(this).attr('id');
+                const newId = oldId.replace(/Tables___TABLE_INDEX____Properties___PROP_INDEX__/, `Tables_${tableIndex}__Properties_${propertyIndex}`);
+                $(this).attr('id', newId);
+            });
+
+            $(propertyElement).find('label[for^="Tables___TABLE_INDEX____Properties___PROP_INDEX__"]').each(function() {
+                const oldFor = $(this).attr('for');
+                const newFor = oldFor.replace(/Tables___TABLE_INDEX____Properties___PROP_INDEX__/, `Tables_${tableIndex}__Properties_${propertyIndex}`);
+                $(this).attr('for', newFor);
+            });
+            
+            $(propertyElement).find('span[data-valmsg-for^="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__]"]').each(function() {
+                const oldValMsgFor = $(this).attr('data-valmsg-for');
+                const newValMsgFor = oldValMsgFor.replace(/Tables\[__TABLE_INDEX__\]\.Properties\[__PROP_INDEX__\]/, `Tables[${tableIndex}].Properties[${propertyIndex}]`);
+                $(this).attr('data-valmsg-for', newValMsgFor);
+            });
+
+            // Update data attributes for remove/fk buttons
+            $(propertyElement).find('.remove-property-btn, .fk-checkbox').attr('data-property-index', propertyIndex).attr('data-table-index', tableIndex);
+            
+            // Update property card ID
+            $(propertyElement).attr('id', `propertyDef_${tableIndex}_${propertyIndex}`);
+            // Update FK options container ID
+            $(propertyElement).find('.fk-options').attr('id', `fkOptions_${tableIndex}_${propertyIndex}`);
+
+            // Update main property accordion toggle and target (no changes here from last version)
+            $(propertyElement).find('.card-header').attr({
+                'id': `headingProperty_${tableIndex}_${propertyIndex}`,
+                'data-bs-toggle': `collapse`, // Ensure this is 'collapse'
+                'data-bs-target': `#collapseProperty_${tableIndex}_${propertyIndex}`,
+                'aria-controls': `collapseProperty_${tableIndex}_${propertyIndex}`
+            });
+            $(propertyElement).find('.card-body.accordion-collapse').attr({
+                'id': `collapseProperty_${tableIndex}_${propertyIndex}`,
+                'aria-labelledby': `headingProperty_${tableIndex}_${propertyIndex}`,
+                'data-bs-parent': `#tablesContainer`
+            });
+
+            // Update nested accordion IDs (FK, Validation, Config)
+            const accordionParentId = `accordionProperty_${tableIndex}_${propertyIndex}`;
+            $(propertyElement).find('.accordion').attr('id', accordionParentId);
+            $(propertyElement).find('.accordion-item').each(function(idx, item) {
+                let itemType = '';
+                const buttonText = $(item).find('button.accordion-button').text().trim();
+                if (buttonText.includes('Khóa Ngoại')) itemType = 'Fk';
+                else if (buttonText.includes('Xác Thực')) itemType = 'Validation';
+                else if (buttonText.includes('Cấu Hình')) itemType = 'Config';
+                else itemType = `Item${idx}`;
+
+                const collapseId = `collapse${itemType}_${tableIndex}_${propertyIndex}`;
+                const headingId = `heading${itemType}_${tableIndex}_${propertyIndex}`;
+
+                $(item).find('.accordion-header').attr('id', headingId);
+                $(item).find('.accordion-button').attr({'data-bs-target': `#${collapseId}`, 'aria-controls': collapseId });
+                $(item).find('.accordion-collapse').attr({'id': collapseId, 'aria-labelledby': headingId, 'data-bs-parent': `#${accordionParentId}` });
+            });
+
+            $(propertyElement).find('.remove-property-btn').prop('disabled', $(`.properties-container[data-table-index='${tableIndex}'] .property-def`).length <= 1);
+
+            const selectedDataType = $(propertyElement).find('.data-type-selector').val();
+            toggleValidationAndConfigFields(propertyElement, selectedDataType);
+            populateReferencedTableDropdown($(propertyElement).find('.referenced-table-dropdown'), tableIndex);
+
+            // Re-initialize Select2 for the data type selector in the header
+            if ($(propertyElement).find('.card-header .data-type-selector').data('select2')) { $(propertyElement).find('.card-header .data-type-selector').select2('destroy'); }
+            $(propertyElement).find('.card-header .data-type-selector').select2({ theme: "bootstrap-5", dropdownParent: $(propertyElement).find('.card-header .prop-col:has(.data-type-selector)') });
+
+            // Re-initialize Select2 for FK dropdown
+            if ($(propertyElement).find('.referenced-table-dropdown').data('select2')) { $(propertyElement).find('.referenced-table-dropdown').select2('destroy'); }
+            $(propertyElement).find('.referenced-table-dropdown').select2({ theme: "bootstrap-5", dropdownParent: $(propertyElement).find('.fk-options') });
+        }
+
+
+        // Reindexes properties within a specific table after add/remove/sort
+        function reindexPropertiesForTable(tableIndex) {
+            $(`.properties-container[data-table-index='${tableIndex}'] .property-def`).each(function (propIdx) {
+                updatePropertyControls(tableIndex, propIdx, this);
+            });
+        }
+
+        // Reindexes all tables and their properties after add/remove/sort of tables
+        function reindexTables() {
+            $('#tablesContainer .table-def').each(function (idx) {
+                $(this).attr('data-table-index', idx);
+                $(this).find('.card-header h4').html(`Bảng ${idx + 1}: <span class="table-name-display fw-normal">${$(this).find('.table-name-input').val() || `Bảng ${idx + 1}`}</span>`);
+                let tableNameInput = $(this).find('.table-name-input');
+                let currentTableName = tableNameInput.val();
+                $(this).find('.table-name-display').text(currentTableName || `Bảng ${idx + 1}`);
+
+                tableNameInput.attr('name', `Tables[${idx}].TableName`).attr('id', `Tables_${idx}__TableName`);
+                $(this).find(`label[for^="Tables_"][for$="__TableName"]`).attr('for', `Tables_${idx}__TableName`);
+                $(this).find(`span[data-valmsg-for^="Tables["][data-valmsg-for$=".TableName"]`).attr('data-valmsg-for', `Tables[${idx}].TableName`);
+
+                $(this).find('.remove-table-btn, .add-property-btn, .properties-container').attr('data-table-index', idx);
+                reindexPropertiesForTable(idx);
+            });
+            initializeSortableForAllTables();
+            $('#tablesContainer .remove-table-btn').prop('disabled', $('#tablesContainer .table-def').length <= 1);
+            updateAllReferencedTableDropdowns();
+        }
+
+        // Event handler for table name input change (updates display name and FK dropdowns)
+        $('#tablesContainer').on('input', '.table-name-input', function () {
+            let tableDef = $(this).closest('.table-def');
+            tableDef.find('.table-name-display').text($(this).val() || `Bảng ${tableDef.data('table-index') + 1}`);
+            updateAllReferencedTableDropdowns();
+        });
+
+        // Table search/filter
+        $('#tableSearchInput').on('keyup', function () {
+            let searchTerm = $(this).val().toLowerCase();
+            $('#tablesContainer .table-def').each(function () {
+                let tableName = $(this).find('.table-name-input').val().toLowerCase();
+                if (tableName.includes(searchTerm)) {
+                    $(this).show();
+                } else {
+                    $(this).hide();
+                }
+            });
+        });
+
+        // Property search/filter within a table
+        $('#tablesContainer').on('keyup', '.property-search-input', function () {
+            let searchTerm = $(this).val().toLowerCase();
+            let $propertiesContainer = $(this).closest('.card-body').find('.properties-container');
+            $propertiesContainer.find('.property-def').each(function () {
+                let propName = $(this).find('input[name$=".PropertyName"]').val().toLowerCase();
+                $(this).toggle(propName.includes(searchTerm));
+            });
+        });
+
+        // Add new table button click handler
+        $('#addTableBtn').click(function () {
+            let currentTableIndex = $('#tablesContainer .table-def').length;
+            const tableTemplateEl = document.getElementById('tableTemplate');
+
+            if (!tableTemplateEl || typeof tableTemplateEl.content === 'undefined') {
+                console.error("Error: The 'tableTemplate' element was not found or is not a valid HTML template element.");
+                alert("A critical UI template is missing or invalid. Please contact support or check the browser console for details.");
+                return;
+            }
+
+            const tableFragment = tableTemplateEl.content.cloneNode(true);
+            const firstElement = tableFragment.firstElementChild;
+
+            if (!firstElement) {
+                console.error("Error: The 'tableTemplate' content is empty or does not start with an HTML element.");
+                alert("A critical UI template is malformed. Please contact support or check the browser console for details.");
+                return;
+            }
+
+            let tableHtmlString = firstElement.outerHTML;
+            tableHtmlString = tableHtmlString.replace(/__TABLE_INDEX__/g, currentTableIndex)
+                                             .replace(/__TABLE_NUMBER__/g, currentTableIndex + 1);
+            $('#tablesContainer').append(tableHtmlString);
+
+            // Add default properties (Id and Name) to the new table
+            addPropertyToTable(currentTableIndex, { PropertyName: "Id", DataType: "int", IsPrimaryKey: true, IsNullable: false });
+            addPropertyToTable(currentTableIndex, { PropertyName: "Name", DataType: "string", IsNullable: false, MaxLength: 255 });
+            reindexTables();
+        });
+
+        // Function to add a new property to a specific table
+        function addPropertyToTable(tableIndex, propertyData = {}) {
+            let propertyContainer = $(`.properties-container[data-table-index='${tableIndex}']`);
+            let propertyCounter = propertyContainer.find('.property-def').length;
+
+            const propertyTemplateEl = document.getElementById('propertyTemplate');
+            if (!propertyTemplateEl || typeof propertyTemplateEl.content === 'undefined') {
+                console.error("Error: The 'propertyTemplate' element was not found or is not a valid HTML template element.");
+                alert("A critical UI template for properties is missing or invalid. Please contact support or check the browser console for details.");
+                return;
+            }
+
+            const propertyFragment = propertyTemplateEl.content.cloneNode(true);
+            const firstPropertyElement = propertyFragment.firstElementChild;
+            if (!firstPropertyElement) {
+                console.error("Error: The 'propertyTemplate' content is empty or does not start with an HTML element.");
+                alert("A critical UI template for properties is malformed. Please contact support or check the browser console for details.");
+                return;
+            }
+
+            let newPropertyHtmlString = firstPropertyElement.outerHTML;
+            newPropertyHtmlString = newPropertyHtmlString.replace(/__TABLE_INDEX__/g, tableIndex)
+                                                         .replace(/__PROP_INDEX__/g, propertyCounter);
+
+            let $newPropElement = $(newPropertyHtmlString);
+
+            // Populate data type options and select the correct one
+            $newPropElement.find('.data-type-selector').html(dataTypeOptionsHtml).val(propertyData.DataType || 'string');
+
+            // Set initial values for inputs based on propertyData object
+            $newPropElement.find('input[name$=".PropertyName"]').val(propertyData.PropertyName || '');
+            $newPropElement.find('input[name$=".IsPrimaryKey"]').first().prop('checked', propertyData.IsPrimaryKey || false);
+            $newPropElement.find('input[name$=".IsNullable"]').first().prop('checked', propertyData.IsNullable === undefined ? true : propertyData.IsNullable);
+
+            // Set values for Validation properties (apply defaults or existing data)
+            $newPropElement.find('input[name$=".MaxLength"]').val(propertyData.MaxLength || '');
+            $newPropElement.find('input[name$=".MinLength"]').val(propertyData.MinLength || '');
+            $newPropElement.find('input[name$=".RangeMin"]').val(propertyData.RangeMin || '');
+            $newPropElement.find('input[name$=".RangeMax"]').val(propertyData.RangeMax || '');
+            $newPropElement.find('input[name$=".IsEmailAddress"]').first().prop('checked', propertyData.IsEmailAddress || false);
+            $newPropElement.find('input[name$=".IsPhoneNumber"]').first().prop('checked', propertyData.IsPhoneNumber || false);
+            $newPropElement.find('input[name$=".IsUrl"]').first().prop('checked', propertyData.IsUrl || false);
+            $newPropElement.find('input[name$=".RegexPattern"]').val(propertyData.RegexPattern || '');
+
+            // Set values for DB Config properties
+            $newPropElement.find('input[name$=".ColumnTypeName"]').val(propertyData.ColumnTypeName || '');
+            $newPropElement.find('input[name$=".IsTimestamp"]').first().prop('checked', propertyData.IsTimestamp || false);
+            $newPropElement.find('input[name$=".IsConcurrencyToken"]').first().prop('checked', propertyData.IsConcurrencyToken || false);
+
+            // Set values for Foreign Key properties
+            $newPropElement.find('input[name$=".IsForeignKey"]').first().prop('checked', propertyData.IsForeignKey || false);
+            $newPropElement.find('input[name$=".NavigationPropertyName"]').val(propertyData.NavigationPropertyName || '');
+
+            // Append the processed HTML to the container
+            $newPropElement.appendTo(propertyContainer);
+
+            // Initialize Select2 and toggle fields
+            $newPropElement.find('.card-header .data-type-selector').select2({ theme: "bootstrap-5", dropdownParent: $newPropElement.find('.card-header .prop-col:has(.data-type-selector)') });
+            
+            // Populate and initialize Select2 for FK dropdown
+            const $referencedTableDropdown = $newPropElement.find('.referenced-table-dropdown');
+            populateReferencedTableDropdown($referencedTableDropdown, tableIndex);
+            if (propertyData.ReferencedTableName) { // Select the pre-filled value if it exists
+                $referencedTableDropdown.val(propertyData.ReferencedTableName).trigger('change');
+            }
+
+            // Trigger change for data type to show/hide validation/config fields correctly
+            $newPropElement.find('.data-type-selector').trigger('change');
+            // Trigger change for FK checkbox to show/hide FK options correctly
+            $newPropElement.find('.fk-checkbox').trigger('change');
+
+            // Reindex properties for the table to ensure correct naming/IDs after adding
+            reindexPropertiesForTable(tableIndex);
+        }
+
+
+        // Event handler for "Add Property" button click
+        $('#tablesContainer').on('click', '.add-property-btn', function () {
+            let tableIndex = $(this).data('table-index');
+            // When adding a new property, default to an int 'NewPropertyX'
+            addPropertyToTable(tableIndex, { PropertyName: `NewProperty${$(`.properties-container[data-table-index='${tableIndex}'] .property-def`).length + 1}`, DataType: "int", IsNullable: true });
+        });
+
+        // Event handlers for removing tables and properties (unchanged)
+        $('#tablesContainer').on('click', '.remove-table-btn', function () {
+            if ($('#tablesContainer .table-def').length > 1) { $(this).closest('.table-def').remove(); reindexTables(); }
+        });
+
+        $('#tablesContainer').on('click', '.remove-property-btn', function () {
+            let tableIndex = $(this).data('table-index');
+            if ($(`.properties-container[data-table-index='${tableIndex}'] .property-def`).length > 1) { $(this).closest('.property-def').remove(); reindexPropertiesForTable(tableIndex); }
+        });
+
+        // Event handler for when the "Is Foreign Key?" checkbox changes
+        $('#tablesContainer').on('change', '.fk-checkbox', function () {
+            let tableIndex = $(this).data('table-index');
+            let propertyIndex = $(this).data('property-index');
+            let fkOptionsDiv = $(`#fkOptions_${tableIndex}_${propertyIndex}`);
+            let navPropInput = fkOptionsDiv.find('.nav-prop-name-input');
+            let referencedTableDropdown = fkOptionsDiv.find('.referenced-table-dropdown');
+            let currentPropertyCard = $(this).closest('.property-def');
+            let currentDataTypeSelector = currentPropertyCard.find('select[name$=".DataType"]');
+            let propertyNameInput = currentPropertyCard.find('input[name$=".PropertyName"]');
+
+            if ($(this).is(':checked')) {
+                fkOptionsDiv.slideDown();
+                // Ensure dropdown is populated before attempting to select
+                populateReferencedTableDropdown(referencedTableDropdown, tableIndex);
+
+                // Auto-suggest DataType and PropertyName based on selected referenced table's PK
+                if (referencedTableDropdown.val()) {
+                    let pkDataType = getPrimaryKeyDataType(referencedTableDropdown.val());
+                    currentDataTypeSelector.val(pkDataType).trigger('change'); // Update and trigger change for Select2 and other handlers
+                }
+
+                if ((!propertyNameInput.val() || propertyNameInput.val().startsWith("NewProperty")) && referencedTableDropdown.val()) {
+                    let suggestedFkName = referencedTableDropdown.val().replace(/[^a-zA-Z0-9_]/g, '') + "Id";
+                    propertyNameInput.val(suggestedFkName);
+                }
+                if (!navPropInput.val() && referencedTableDropdown.val()) {
+                    navPropInput.val(referencedTableDropdown.val().replace(/[^a-zA-Z0-9_]/g, ''));
+                }
+            } else {
+                fkOptionsDiv.slideUp();
+                // Clear values when FK is unchecked
+                referencedTableDropdown.val('').trigger('change');
+                navPropInput.val('');
+                // Optionally reset DataType and PropertyName if desired, but be careful not to override user input
+            }
+        });
+
+        // Event handler for when the "Referenced Table" dropdown changes
+        $('#tablesContainer').on('change', '.referenced-table-dropdown', function () {
+            let fkOptionsDiv = $(this).closest('.fk-options');
+            let navPropInput = fkOptionsDiv.find('.nav-prop-name-input');
+            let currentPropertyCard = $(this).closest('.property-def');
+            let currentDataTypeSelector = currentPropertyCard.find('select[name$=".DataType"]');
+            let propertyNameInput = currentPropertyCard.find('input[name$=".PropertyName"]');
+            let selectedReferencedTable = $(this).val();
+
+            // Auto-suggest DataType based on selected referenced table's PK
+            if (selectedReferencedTable) {
+                let pkDataType = getPrimaryKeyDataType(selectedReferencedTable);
+                currentDataTypeSelector.val(pkDataType).trigger('change');
+            }
+
+            // Auto-suggest PropertyName if it's empty or a default name
+            if ((!propertyNameInput.val() || propertyNameInput.val().startsWith("NewProperty")) && selectedReferencedTable) {
+                let suggestedFkName = selectedReferencedTable.replace(/[^a-zA-Z0-9_]/g, '') + "Id";
+                propertyNameInput.val(suggestedFkName);
+            }
+            // Auto-suggest NavigationPropertyName if it's empty
+            if (!navPropInput.val() && selectedReferencedTable) {
+                navPropInput.val(selectedReferencedTable.replace(/[^a-zA-Z0-9_]/g, ''));
+            }
+        });
+
+        // Event handler for when the "Data Type" selector changes (toggles validation/config fields)
+        $('#tablesContainer').on('change', '.data-type-selector', function () {
+            let propertyElement = $(this).closest('.property-def');
+            toggleValidationAndConfigFields(propertyElement, $(this).val());
+        });
+
+
+        // Client-side validation for duplicate table/property names (unchanged)
+        $('#generateSchemaForm').submit(function (event) {
+            $('.text-danger.client-validation').remove();
+            let isValid = true;
+            let tableNames = new Set();
+            $('#tablesContainer .table-name-input').each(function () {
+                let tableName = $(this).val();
+                if (tableName) {
+                    if (tableNames.has(tableName)) {
+                        $(this).after(`<span class="text-danger client-validation">Tên bảng '${tableName}' bị trùng.</span>`);
+                        isValid = false;
+                    }
+                    tableNames.add(tableName);
+                }
+            });
+
+            $('#tablesContainer .properties-container').each(function () {
+                let propertyNames = new Set();
+                $(this).find('input[name$=".PropertyName"]').each(function () {
+                    let propName = $(this).val();
+                    if (propName) {
+                        if (propertyNames.has(propName)) {
+                            $(this).after(`<span class="text-danger client-validation">Tên thuộc tính '${propName}' bị trùng trong bảng này.</span>`);
+                            isValid = false;
+                        }
+                        propertyNames.add(propName);
+                    }
+                });
+            });
+
+            if (!isValid) {
+                event.preventDefault();
+                if ($('.alert.alert-danger[asp-validation-summary="All"]').is(':hidden')) {
+                    $('.alert.alert-danger[asp-validation-summary="All"]').html("Vui lòng sửa các lỗi được chỉ ra.").show();
+                }
+                return;
+            }
+
+            event.preventDefault();
+            $('#generateBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Đang gửi...');
+            $('#jobStatus').show().find('#statusMessage').text('Đang gửi yêu cầu...').removeClass('status-completed status-failed status-processing');
+            $('#progressBar').parent().show();
+            $('#progressBar').css('width', '10%').text('10%');
+            $('#downloadLink').hide();
+
+            $.ajax({
+                url: $(this).attr('action'),
+                type: 'POST',
+                data: $(this).serialize(),
+                success: function (response) {
+                    if (response.success && response.jobId) {
+                        $('#statusMessage').text(`Đã gửi yêu cầu. Job ID: ${response.jobId}. Đang chờ xử lý...`).addClass('status-processing');
+                        $('#progressBar').css('width', '25%').text('25%');
+                        pollJobStatus(response.jobId);
+                    } else {
+                        $('#statusMessage').text(`Lỗi: ${response.message || 'Không thể bắt đầu tạo mã.'}`).addClass('status-failed');
+                        $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                        $('#progressBar').parent().hide();
+                    }
+                },
+                error: function () {
+                    $('#statusMessage').text('Lỗi kết nối khi gửi yêu cầu.').addClass('status-failed');
+                    $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                    $('#progressBar').parent().hide();
+                }
+            });
+        });
+
+        // Polling job status (unchanged)
+        function pollJobStatus(jobId) {
+            let intervalId = setInterval(function () {
+                $.get(`/Generator/GetJobStatus?jobId=${jobId}`, function (statusResponse) {
+                    $('#statusMessage').text(`Trạng thái: ${statusResponse.status || 'Không xác định'}. ${statusResponse.message || ''}`);
+                    if (statusResponse.status === "Processing") {
+                        $('#progressBar').css('width', '50%').text('50%');
+                        $('#statusMessage').removeClass('status-completed status-failed').addClass('status-processing');
+                    } else if (statusResponse.status === "Completed") {
+                        clearInterval(intervalId);
+                        $('#statusMessage').text('Hoàn tất! Nhấn link để tải.').removeClass('status-processing status-failed').addClass('status-completed');
+                        $('#progressBar').css('width', '100%').text('100%');
+                        setTimeout(() => $('#progressBar').parent().hide(), 2000);
+                        // *** Improvement: Check if downloadFileName is provided ***
+                        if (statusResponse.downloadFileName) {
+                            $('#downloadLink').attr('href', `/Generator/DownloadGeneratedCode?fileName=${statusResponse.downloadFileName}`).text(`Tải ${statusResponse.downloadFileName}`).show();
+                        } else {
+                            $('#statusMessage').text('Hoàn tất, nhưng không tìm thấy tên file tải về. Vui lòng kiểm tra log server.').addClass('status-failed');
+                        }
+                        $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                    } else if (statusResponse.status === "Failed" || statusResponse.status === "NotFound") {
+                        clearInterval(intervalId);
+                        $('#statusMessage').text(`Lỗi: ${statusResponse.message || 'Không tìm thấy công việc hoặc công việc thất bại.'}`).removeClass('status-processing status-completed').addClass('status-failed');
+                        $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                        $('#progressBar').parent().hide();
+                    }
+                }).fail(function () {
+                    clearInterval(intervalId);
+                    $('#statusMessage').text('Lỗi khi kiểm tra trạng thái công việc.').addClass('status-failed');
+                    $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                    $('#progressBar').parent().hide();
+                });
+            }, 3000);
+        }
+
+        // SortableJS initialization (unchanged)
+        function initializeSortableForTable(tableIndex) {
+            const container = $(`.properties-container[data-table-index='${tableIndex}']`)[0];
+            if (container) {
+                if (Sortable.get(container)) { Sortable.get(container).destroy(); }
+                Sortable.create(container, { animation: 150, handle: '.grab-handle', onEnd: function (evt) { reindexPropertiesForTable(tableIndex); } });
+            }
+        }
+        function initializeSortableForAllTables() {
+            $('#tablesContainer .properties-container').each(function() { initializeSortableForTable($(this).data('table-index')); });
+        }
+
+        // Mermaid Diagram (unchanged)
+        $('#viewDiagramBtn').click(function() {
+            const diagramContainer = $('#diagramContainer');
+            if (diagramContainer.is(':visible')) {
+                diagramContainer.slideUp();
+                $(this).html('<i class="fas fa-project-diagram me-1"></i>Xem Sơ đồ CSDL');
+                return;
+            }
+            let erdDefinition = "erDiagram\n";
+            let relationships = "";
+            $('#tablesContainer .table-def').each(function() {
+                const tableIndex = $(this).data('table-index');
+                const tableNameInput = $(this).find('.table-name-input');
+                const tableName = tableNameInput.val();
+                if (!tableName) return true;
+                const sanitizedTableName = tableName.replace(/[^a-zA-Z0-9_]/g, '_');
+                erdDefinition += `    ${sanitizedTableName} {\n`;
+                $(this).find('.properties-container .property-def').each(function() {
+                    const propNameInput = $(this).find('input[name$=".PropertyName"]');
+                    const propName = propNameInput.val();
+                    if (!propName) return true;
+                    const dataTypeSelector = $(this).find('select[name$=".DataType"]');
+                    const dataType = dataTypeSelector.val();
+                    const isPk = $(this).find('input[name$=".IsPrimaryKey"]').first().is(':checked');
+                    const isFk = $(this).find('input[name$=".IsForeignKey"]').first().is(':checked');
+                    const referencedTableDropdown = $(this).find('select[name$=".ReferencedTableName"]');
+                    const referencedTableName = referencedTableDropdown.val();
+                    const sanitizedPropName = propName.replace(/[^a-zA-Z0-9_]/g, '_');
+                    let pkLabel = isPk ? "PK" : "";
+                    let fkLabel = isFk ? "FK" : "";
+                    erdDefinition += `        ${dataType.replace(/[^a-zA-Z0-9_\[\]]/g, '_')} ${sanitizedPropName} "${pkLabel}${pkLabel && fkLabel ? "," : ""}${fkLabel}"\n`;
+                    if (isFk && referencedTableName) {
+                        const sanitizedReferencedTableName = referencedTableName.replace(/[^a-zA-Z0-9_]/g, '_');
+                        relationships += `    ${sanitizedTableName} }o--|| ${sanitizedReferencedTableName} : "${sanitizedPropName} refs"\n`;
+                    }
+                });
+                erdDefinition += "    }\n";
+            });
+            erdDefinition += relationships;
+            diagramContainer.html('').show();
+            try {
+                mermaid.render('generated-diagram', erdDefinition).then(({ svg, bindFunctions }) => {
+                    diagramContainer.html(svg);
+                    if (bindFunctions) bindFunctions();
+                }).catch(error => {
+                    console.error("Mermaid render error:", error);
+                    diagramContainer.html(`<div class="alert alert-warning">Không thể render sơ đồ. Kiểm tra cấu trúc bảng hoặc console để biết lỗi.</div>`);
+                });
+            } catch (error) {
+                 console.error("Mermaid initialization error:", error);
+                 diagramContainer.html(`<div class="alert alert-danger">Lỗi khởi tạo Mermaid: ${error.message}</div>`);
+            }
+            $(this).html('<i class="fas fa-eye-slash me-1"></i>Ẩn Sơ đồ');
+        });
+
+
+        $(document).ready(function() {
+            if (@Model.Tables.Count === 0) {
+                $('#addTableBtn').click();
+            } else {
+                reindexTables();
+                $('#tablesContainer .card-header .data-type-selector').each(function() {
+                    $(this).select2({ theme: "bootstrap-5", dropdownParent: $(this).closest('.prop-col') });
+                });
+                $('#tablesContainer .referenced-table-dropdown').each(function() {
+                    $(this).select2({ theme: "bootstrap-5", dropdownParent: $(this).closest('.fk-options') });
+                    let tableIndex = $(this).closest('.table-def').data('table-index');
+                    populateReferencedTableDropdown(this, tableIndex);
+                });
+
+                $('#tablesContainer .property-def').each(function() {
+                    // Trigger change for data type to show/hide validation/config fields correctly
+                    $(this).find('.data-type-selector').trigger('change');
+                    // Trigger change for FK checkbox to show/hide FK options correctly
+                    $(this).find('.fk-checkbox').trigger('change');
+                });
+            }
+
+            $.fn.select2.amd.define('select2/i18n/vi', [], function () {
+                return {
+                    errorLoading: function () { return 'Không thể tải kết quả.'; },
+                    inputTooLong: function (args) { var over = args.input.length - args.maximum; return 'Vui lòng xóa ' + over + ' ký tự'; },
+                    inputTooShort: function (args) { var remaining = args.minimum - args.input.length; return 'Vui lòng nhập thêm ' + remaining + ' ký tự'; },
+                    loadingMore: function () { return 'Đang tải thêm kết quả…'; },
+                    maximumSelected: function (args) { return 'Bạn chỉ có thể chọn tối đa ' + args.maximum + ' mục'; },
+                    noResults: function () { return 'Không tìm thấy kết quả'; },
+                    searching: function () { return 'Đang tìm kiếm…'; },
+                    removeAllItems: function () { return 'Xóa tất cả các mục'; }
+                };
+            });
+        });
+    </script>
+
+    <template id="tableTemplate">
+        <div class="card table-def mb-4" data-table-index="__TABLE_INDEX__">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Bảng __TABLE_NUMBER__: <span class="table-name-display fw-normal">Bảng __TABLE_NUMBER__</span></h4>
+                <button type="button" class="btn btn-sm btn-outline-danger remove-table-btn"><i class="fas fa-trash-alt me-1"></i>Xóa Bảng</button>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label id="label_Tables___TABLE_INDEX____TableName" for="Tables___TABLE_INDEX____TableName" class="form-label">Tên Bảng</label>
+                    <input type="text" id="Tables___TABLE_INDEX____TableName" name="Tables[__TABLE_INDEX__].TableName" class="form-control table-name-input" placeholder="Ví dụ: Orders" />
+                    <span class="text-danger" data-valmsg-for="Tables[__TABLE_INDEX__].TableName" data-valmsg-replace="true"></span>
+                </div>
+                <div class="row mt-3 mb-2">
+                    <div class="col-md-6"><h5 class="mb-0">Thuộc tính:</h5></div>
+                    <div class="col-md-6">
+                        <input type="text" class="form-control form-control-sm property-search-input" placeholder="Tìm thuộc tính trong bảng này..." data-table-index="__TABLE_INDEX__">
+                    </div>
+                </div>
+                <div class="properties-container" data-table-index="__TABLE_INDEX__"></div>
+                <button type="button" class="btn btn-sm btn-outline-primary add-property-btn mt-3" data-table-index="__TABLE_INDEX__"><i class="fas fa-plus me-1"></i>Thêm Thuộc Tính</button>
+            </div>
+        </div>
+    </template>
+    <template id="propertyTemplate">
+        <div class="card property-def mb-3" data-property-index="__PROP_INDEX__" id="propertyDef___TABLE_INDEX_____PROP_INDEX__">
+            <div class="card-header" id="headingProperty___TABLE_INDEX_____PROP_INDEX__" data-bs-toggle="collapse" data-bs-target="#collapseProperty___TABLE_INDEX_____PROP_INDEX__" aria-expanded="false" aria-controls="collapseProperty___TABLE_INDEX_____PROP_INDEX__">
+                <i class="fas fa-grip-vertical grab-handle me-2"></i>
+                <div class="row flex-grow-1 align-items-center g-2">
+                    <div class="col-md-4 col-sm-6 prop-col">
+                        <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____PropertyName" class="form-label visually-hidden">Tên</label>
+                        <input type="text" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____PropertyName" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].PropertyName" class="form-control form-control-sm" value="" placeholder="Tên Thuộc Tính" />
+                        <span class="text-danger" data-valmsg-for="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].PropertyName" data-valmsg-replace="true"></span>
+                    </div>
+                    <div class="col-md-3 col-sm-6 prop-col">
+                        <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____DataType" class="form-label visually-hidden">Kiểu</label>
+                        <select id="Tables___TABLE_INDEX____Properties___PROP_INDEX____DataType" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].DataType" class="form-select form-select-sm data-type-selector"></select>
+                    </div>
+                    <div class="col-md-2 col-sm-4 prop-col">
+                        <div class="form-check form-switch">
+                            <input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsPrimaryKey" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsPrimaryKey" class="form-check-input" type="checkbox" value="true" />
+                            <input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsPrimaryKey" value="false" />
+                            <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsPrimaryKey" class="form-check-label">PK?</label>
+                        </div>
+                    </div>
+                    <div class="col-md-2 col-sm-4 prop-col">
+                        <div class="form-check form-switch">
+                            <input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsNullable" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsNullable" class="form-check-input" type="checkbox" value="true" />
+                            <input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsNullable" value="false" />
+                            <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsNullable" class="form-check-label">Null?</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger remove-property-btn ms-2"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="collapseProperty___TABLE_INDEX_____PROP_INDEX__" class="card-body accordion-collapse collapse" aria-labelledby="headingProperty___TABLE_INDEX_____PROP_INDEX__" data-bs-parent="#tablesContainer">
+                <div class="accordion mt-3" id="accordionProperty___TABLE_INDEX_____PROP_INDEX__">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingFk___TABLE_INDEX_____PROP_INDEX__">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFk___TABLE_INDEX_____PROP_INDEX__" aria-expanded="false" aria-controls="collapseFk___TABLE_INDEX_____PROP_INDEX__">
+                                Khóa Ngoại & Điều Hướng
+                            </button>
+                        </h2>
+                        <div id="collapseFk___TABLE_INDEX_____PROP_INDEX__" class="accordion-collapse collapse" aria-labelledby="headingFk___TABLE_INDEX_____PROP_INDEX__" data-bs-parent="#accordionProperty___TABLE_INDEX_____PROP_INDEX__">
+                            <div class="accordion-body">
+                                <div class="form-check form-switch">
+                                    <input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsForeignKey" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsForeignKey" class="form-check-input fk-checkbox" type="checkbox" value="true" data-table-index="__TABLE_INDEX__" data-property-index="__PROP_INDEX__" />
+                                    <input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsForeignKey" value="false" />
+                                    <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsForeignKey" class="form-check-label">Là Khóa Ngoại?</label>
+                                </div>
+                                <div class="fk-options mt-2" id="fkOptions___TABLE_INDEX_____PROP_INDEX__" style="display:none;">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____ReferencedTableName" class="form-label">Bảng Tham Chiếu</label>
+                                            <select id="Tables___TABLE_INDEX____Properties___PROP_INDEX____ReferencedTableName" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].ReferencedTableName" class="form-select form-select-sm referenced-table-dropdown"><option value="">-- Chọn Bảng --</option></select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____NavigationPropertyName" class="form-label">Tên Thuộc Tính Điều Hướng</label>
+                                            <input type="text" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____NavigationPropertyName" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].NavigationPropertyName" class="form-control form-control-sm nav-prop-name-input" value="" placeholder="Tự động nếu trống"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingValidation___TABLE_INDEX_____PROP_INDEX__">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseValidation___TABLE_INDEX_____PROP_INDEX__" aria-expanded="false" aria-controls="collapseValidation___TABLE_INDEX_____PROP_INDEX__">
+                                Tùy Chọn Xác Thực (Validation)
+                            </button>
+                        </h2>
+                        <div id="collapseValidation___TABLE_INDEX_____PROP_INDEX__" class="accordion-collapse collapse" aria-labelledby="headingValidation___TABLE_INDEX_____PROP_INDEX__" data-bs-parent="#accordionProperty___TABLE_INDEX_____PROP_INDEX__">
+                            <div class="accordion-body">
+                                <div class="row validation-prop-group g-2">
+                                    <div class="col-md-3 prop-col string-validation" style="display:none;">
+                                        <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____MaxLength" class="form-label">Độ dài Max (String)</label>
+                                        <input type="number" min="1" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____MaxLength" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].MaxLength" class="form-control form-control-sm" value="" placeholder="Ví dụ: 255" />
+                                    </div>
+                                    <div class="col-md-3 prop-col string-validation" style="display:none;">
+                                        <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____MinLength" class="form-label">Độ dài Min (String)</label>
+                                        <input type="number" min="0" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____MinLength" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].MinLength" class="form-control form-control-sm" value="" placeholder="Ví dụ: 0" />
+                                    </div>
+                                    <div class="col-md-3 prop-col numeric-validation" style="display:none;">
+                                        <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____RangeMin" class="form-label">Giá trị Min (Số)</label>
+                                        <input type="number" step="any" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____RangeMin" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].RangeMin" class="form-control form-control-sm" value="" placeholder="Ví dụ: 0" />
+                                    </div>
+                                    <div class="col-md-3 prop-col numeric-validation" style="display:none;">
+                                        <label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____RangeMax" class="form-label">Giá trị Max (Số)</label>
+                                        <input type="number" step="any" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____RangeMax" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].RangeMax" class="form-control form-control-sm" value="" placeholder="Ví dụ: 100" />
+                                    </div>
+                                </div>
+                                <div class="row validation-prop-group mt-2 g-2">
+                                    <div class="col-md-3 col-sm-6 prop-col"><div class="form-check form-switch"><input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsEmailAddress" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsEmailAddress" class="form-check-input" type="checkbox" value="true" /><input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsEmailAddress" value="false" /><label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsEmailAddress" class="form-check-label">Là Email?</label></div></div>
+                                    <div class="col-md-3 col-sm-6 prop-col"><div class="form-check form-switch"><input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsPhoneNumber" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsPhoneNumber" class="form-check-input" type="checkbox" value="true" /><input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsPhoneNumber" value="false" /><label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsPhoneNumber" class="form-check-label">Là SĐT?</label></div></div>
+                                    <div class="col-md-3 col-sm-6 prop-col"><div class="form-check form-switch"><input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsUrl" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsUrl" class="form-check-input" type="checkbox" value="true" /><input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsUrl" value="false" /><label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsUrl" class="form-check-label">Là URL?</label></div></div>
+                                    <div class="col-md-3 col-sm-6 prop-col"><label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____RegexPattern" class="form-label">Regex Pattern</label><input type="text" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____RegexPattern" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].RegexPattern" class="form-control form-control-sm" value="" placeholder="Ví dụ: ^[a-z0-9]+$" /></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingConfig___TABLE_INDEX_____PROP_INDEX__">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseConfig___TABLE_INDEX_____PROP_INDEX__" aria-expanded="false" aria-controls="collapseConfig___TABLE_INDEX_____PROP_INDEX__">
+                                Tùy Chọn Cấu Hình CSDL
+                            </button>
+                        </h2>
+                        <div id="collapseConfig___TABLE_INDEX_____PROP_INDEX__" class="accordion-collapse collapse" aria-labelledby="headingConfig___TABLE_INDEX_____PROP_INDEX__" data-bs-parent="#accordionProperty___TABLE_INDEX_____PROP_INDEX__">
+                            <div class="accordion-body">
+                                <div class="row config-prop-group g-2">
+                                    <div class="col-md-4 prop-col"><label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____ColumnTypeName" class="form-label">Kiểu CSDL (ColumnType)</label><input type="text" id="Tables___TABLE_INDEX____Properties___PROP_INDEX____ColumnTypeName" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].ColumnTypeName" class="form-control form-control-sm" value="" placeholder="ví dụ: decimal(18,2)" /></div>
+                                    <div class="col-md-4 prop-col d-flex align-items-end"><div class="form-check form-switch mb-2 byte-array-option" style="display:none;"><input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsTimestamp" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsTimestamp" class="form-check-input" type="checkbox" value="true" /><input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsTimestamp" value="false" /><label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsTimestamp" class="form-check-label">RowVersion?</label></div></div>
+                                    <div class="col-md-4 prop-col d-flex align-items-end"><div class="form-check form-switch mb-2"><input id="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsConcurrencyToken" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsConcurrencyToken" class="form-check-input" type="checkbox" value="true" /><input type="hidden" name="Tables[__TABLE_INDEX__].Properties[__PROP_INDEX__].IsConcurrencyToken" value="false" /><label for="Tables___TABLE_INDEX____Properties___PROP_INDEX____IsConcurrencyToken" class="form-check-label">Concurrency Token?</label></div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+}
