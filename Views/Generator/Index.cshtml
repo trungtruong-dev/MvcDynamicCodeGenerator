@@ -207,7 +207,7 @@
                         <div class="card table-def mb-4" data-table-index="@i">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h4 class="mb-0">Bảng @(i + 1): <span class="table-name-display fw-normal">@(table.TableName ?? $"Bảng {i + 1}")</span></h4>
-                                <button type="button" class="btn btn-sm btn-outline-danger remove-table-btn" @(Model.Tables.Count <= 1 ? "disabled" : "")><i class="fas fa-trash-alt me-1"></i>Xóa Bảng</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger remove-table-btn" disabled><i class="fas fa-trash-alt me-1"></i>Xóa Bảng</button>
                             </div>
                             <div class="card-body">
                                 <div class="row mb-3">
@@ -684,8 +684,29 @@
             reindexPropertiesForTable(tableIndex);
         }
 
-        $('#tablesContainer').on('click', '.remove-table-btn', function () { /* ... unverändert ... */ });
-        $('#tablesContainer').on('click', '.remove-property-btn', function () { /* ... unverändert ... */ });
+        $('#tablesContainer').on('click', '.remove-table-btn', function () {
+            if ($('#tablesContainer .table-def').length <= 1) {
+                alert('Không thể xóa bảng cuối cùng.');
+                return;
+            }
+            if (confirm('Bạn có chắc chắn muốn xóa bảng này?')) {
+                $(this).closest('.table-def').remove();
+                reindexTables();
+            }
+        });
+
+        $('#tablesContainer').on('click', '.remove-property-btn', function () {
+            const $propertyContainer = $(this).closest('.properties-container');
+            if ($propertyContainer.find('.property-def').length <= 1) {
+                alert('Không thể xóa thuộc tính cuối cùng của bảng.');
+                return;
+            }
+            if (confirm('Bạn có chắc chắn muốn xóa thuộc tính này?')) {
+                const tableIndex = $(this).data('table-index');
+                $(this).closest('.property-def').remove();
+                reindexPropertiesForTable(tableIndex);
+            }
+        });
         
         $('#tablesContainer').on('change', '.fk-checkbox', function () {
             let tableIndex = $(this).data('table-index');
@@ -783,6 +804,21 @@
                 });
             });
 
+            $('#tablesContainer .property-def').each(function() {
+                const $propertyCard = $(this);
+                const isFkChecked = $propertyCard.find('input[name$=".IsForeignKey"][type="checkbox"]').is(':checked');
+                if (isFkChecked) {
+                    const $refTableSelect = $propertyCard.find('select[name$=".ReferencedTableName"]');
+                    if (!$refTableSelect.val()) {
+                        // Remove previous error for this specific select to avoid duplicates
+                        $refTableSelect.siblings('.client-validation').remove();
+                        $refTableSelect.after(`<span class="text-danger client-validation d-block">Bảng tham chiếu là bắt buộc khi là Khóa Ngoại.</span>`);
+                        isValid = false;
+                    }
+                    // You could add similar checks for NavigationPropertyName if it's also mandatory when IsForeignKey is true
+                }
+            });
+
             if (!isValid) {
                 event.preventDefault();
                 if ($('.alert.alert-danger[asp-validation-summary="All"]').is(':hidden')) {
@@ -819,24 +855,160 @@
                         $('#progressBar').parent().hide();
                     }
                 },
-                error: function () {
-                    $('#statusMessage').text('Lỗi kết nối khi gửi yêu cầu.').addClass('status-failed');
+                error: function (jqXHR, textStatus, errorThrown) {
+                    let errorMsg = 'Lỗi kết nối khi gửi yêu cầu.';
+                    if (jqXHR.responseJSON && jqXHR.responseJSON.message) {
+                        errorMsg = jqXHR.responseJSON.message;
+                    } else if (textStatus && errorThrown) {
+                        errorMsg = `Lỗi: ${textStatus} - ${errorThrown}`;
+                    }
+                    $('#statusMessage').text(errorMsg).addClass('status-failed');
                     $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
                     $('#progressBar').parent().hide();
                 },
                 complete: function() {
                     // Re-disable FK fields if their checkbox is not checked after submission attempt
                      $('#tablesContainer .fk-checkbox:not(:checked)').each(function() {
-                        $(this).closest('.accordion-body').find('.fk-options input, .fk-options select').prop('disabled', true);
+                        $(this).closgn-body').find('.fk-options input, .fk-options select').prop('disabled', true);
                     });
                 }
             });
         });
 
-        function pollJobStatus(jobId) { /* ... unverändert ... */ }
+        function pollJobStatus(jobId) {
+            let intervalId = setInterval(function () {
+                $.ajax({
+                    url: '@Url.Action("GetJobStatus", "Generator")' + '?jobId=' + jobId,
+                    type: 'GET',
+                    success: function (response) {
+                        if (response) {
+                            $('#statusMessage').text(response.message || 'Đang xử lý...');
+                            
+                            // Update status classes based on the status
+                            if (response.status === 'Completed') {
+                                clearInterval(intervalId);
+                                $('#statusMessage').text(response.message || 'Hoàn thành!').addClass('status-completed').removeClass('status-processing status-failed');
+                                $('#progressBar').css('width', '100%').text('100%');
+                                $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                                if (response.downloadFileName) {
+                                    $('#downloadLink').attr('href', '@Url.Action("DownloadGeneratedCode", "Generator")?fileName=' + response.downloadFileName).show();
+                                }
+                            } else if (response.status === 'Error') {
+                                clearInterval(intervalId);
+                                $('#statusMessage').text(response.message || 'Xử lý thất bại.').addClass('status-failed').removeClass('status-processing status-completed');
+                                $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                                $('#progressBar').parent().hide();
+                            } else if (response.status === 'Processing') {
+                                // Keep progress at 25% while processing
+                                $('#progressBar').css('width', '25%').text('25%');
+                                $('#statusMessage').addClass('status-processing').removeClass('status-completed status-failed');
+                            } else if (response.status === 'Queued') {
+                                // Keep progress at 10% while queued
+                                $('#progressBar').css('width', '10%').text('10%');
+                                $('#statusMessage').addClass('status-processing').removeClass('status-completed status-failed');
+                            }
+                        } else {
+                            $('#statusMessage').text('Nhận được phản hồi không hợp lệ từ server khi kiểm tra trạng thái. Job có thể đã hết hạn hoặc có lỗi.').addClass('status-failed');
+                            clearInterval(intervalId);
+                            $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                            $('#progressBar').parent().hide();
+                        }
+                    },
+                    error: function (jqXHR, textStatus, errorThrown) {
+                        clearInterval(intervalId);
+                        $('#statusMessage').text(`Lỗi khi kiểm tra trạng thái job: ${textStatus} - ${errorThrown}. Vui lòng thử lại.`).addClass('status-failed');
+                        $('#generateBtn').prop('disabled', false).html('<i class="fas fa-cogs me-2"></i>Tạo Mã');
+                        $('#progressBar').parent().hide();
+                    }
+                });
+            }, 2000); // Poll every 2 seconds
+        }
         function initializeSortableForTable(tableIndex) { /* ... unverändert ... */ }
         function initializeSortableForAllTables() { /* ... unverändert ... */ }
-        $('#viewDiagramBtn').click(function() { /* ... unverändert ... */ });
+        $('#viewDiagramBtn').click(function() {
+            const diagramContainer = $('#diagramContainer');
+            if (diagramContainer.is(':visible')) {
+                diagramContainer.slideUp();
+                return;
+            }
+
+            // Generate Mermaid diagram syntax
+            let diagramSyntax = 'erDiagram\n';
+
+            // Add tables
+            $('#tablesContainer .table-def').each(function() {
+                const tableName = $(this).find('.table-name-input').val();
+                if (!tableName) return;
+
+                diagramSyntax += `    ${tableName} {\n`;
+
+                // Add properties
+                $(this).find('.property-def').each(function() {
+                    const propName = $(this).find('input[name$=".PropertyName"]').val();
+                    const dataType = $(this).find('select[name$=".DataType"]').val();
+                    const isPrimaryKey = $(this).find('input[name$=".IsPrimaryKey"]').is(':checked');
+                    const isNullable = $(this).find('input[name$=".IsNullable"]').is(':checked');
+                    const isForeignKey = $(this).find('input[name$=".IsForeignKey"]').is(':checked');
+
+                    if (!propName) return;
+
+                    // Build property line
+                    let propSyntax = `        ${dataType} ${propName}`;
+                    if (isPrimaryKey) propSyntax += ' PK';
+                    if (isForeignKey) propSyntax += ' FK';
+                    if (!isNullable) propSyntax += ' not null';
+                    diagramSyntax += propSyntax + '\n';
+                });
+
+                diagramSyntax += '    }\n';
+            });
+
+            // Add relationships
+            $('#tablesContainer .property-def').each(function() {
+                const isForeignKey = $(this).find('input[name$=".IsForeignKey"]').is(':checked');
+                if (!isForeignKey) return;
+
+                const currentTable = $(this).closest('.table-def').find('.table-name-input').val();
+                const referencedTable = $(this).find('select[name$=".ReferencedTableName"]').val();
+                const propName = $(this).find('input[name$=".PropertyName"]').val();
+
+                if (!currentTable || !referencedTable || !propName) return;
+
+                // You can adjust the relationship type here if needed
+                let relSyntax = `    ${currentTable} }o--|| ${referencedTable} : "${propName}"`;
+                diagramSyntax += relSyntax + '\n';
+            });
+
+            // Debug: log the syntax
+            console.log('Mermaid syntax:', diagramSyntax);
+
+            // Update diagram
+            diagramContainer.html(diagramSyntax);
+            diagramContainer.slideDown();
+
+            // Render diagram
+            mermaid.initialize({ 
+                startOnLoad: false,
+                securityLevel: 'loose',
+                theme: 'default',
+                flowchart: {
+                    useMaxWidth: false,
+                    htmlLabels: true
+                }
+            });
+
+            try {
+                mermaid.render('diagram', diagramSyntax).then(function(result) {
+                    diagramContainer.html(result.svg);
+                }).catch(function(error) {
+                    console.error('Error rendering diagram:', error);
+                    diagramContainer.html('<div class="alert alert-danger">Lỗi khi tạo sơ đồ. Vui lòng kiểm tra console để biết thêm chi tiết.</div>');
+                });
+            } catch (error) {
+                console.error('Error initializing diagram:', error);
+                diagramContainer.html('<div class="alert alert-danger">Lỗi khi khởi tạo sơ đồ. Vui lòng kiểm tra console để biết thêm chi tiết.</div>');
+            }
+        });
 
         $(document).ready(function() {
              mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'default' });
