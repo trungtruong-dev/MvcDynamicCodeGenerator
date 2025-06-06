@@ -414,6 +414,13 @@
                         <i class="fas fa-cogs me-2"></i>Tạo Mã
                     </button>
                 </div>
+                <div class="mb-3">
+                    <label for="sqlInput" class="form-label fw-bold">Nhập code SQL (DDL):</label>
+                    <textarea id="sqlInput" class="form-control" rows="12" placeholder="Dán code SQL tạo bảng ở đây..."></textarea>
+                    <button type="button" id="parseSqlBtn" class="btn btn-outline-primary mt-2">
+                        <i class="fas fa-magic me-1"></i>Phân tích & Generate
+                    </button>
+                </div>
             </form>
             <div id="jobStatus" style="display:none;">
                 <h4>Trạng thái tạo mã:</h4>
@@ -486,66 +493,70 @@
             byteArrayOptions.toggle(selectedDataType === 'byte[]');
         }
 
-        function updatePropertyControls(tableIndex, propertyIndex, propertyElement) {
-            $(propertyElement).attr('data-property-index', propertyIndex);
+      // Hàm này ở khoảng dòng 556-642 trong file của bạn
+// (Không đổi tên hàm này, đây là hàm re-index chính)
+        function updatePropertyControls(tableIndex, propertyIndex, propertyElement) { // propertyElement là DOM element
+            const $propertyElementJQ = $(propertyElement); // Tạo đối tượng jQuery một lần
+
+            $propertyElementJQ.attr('data-property-index', propertyIndex);
             const baseName = `Tables[${tableIndex}].Properties[${propertyIndex}]`;
             const baseId = `Tables_${tableIndex}__Properties_${propertyIndex}__`;
 
-            $(propertyElement).find('[name]').each(function() {
+            // Cập nhật thuộc tính 'name' cho tất cả input, select, textarea có name chứa "Properties["
+            $propertyElementJQ.find('[name*="Properties["]').each(function() {
                 const oldName = $(this).attr('name');
-                if (oldName && oldName.includes("Properties[") && oldName.includes("].")) {
-                    const propSpecificName = oldName.substring(oldName.lastIndexOf("].") + 2);
-                     $(this).attr('name', `${baseName}.${propSpecificName}`);
-                }
-            });
-             $(propertyElement).find('[id]').each(function() {
-                const oldId = $(this).attr('id');
-                 if (oldId && oldId.includes("__Properties_") && oldId.includes("__")) {
-                    const propSpecificId = oldId.substring(oldId.lastIndexOf("__Properties_") + "__Properties_".length).substring(oldId.substring(oldId.lastIndexOf("__Properties_") + "__Properties_".length).indexOf("__") + 2)
-                    $(this).attr('id', `${baseId}${propSpecificId}`);
-                } else if (oldId && oldId.startsWith("propertyDef_") || oldId.startsWith("fkOptions_") || oldId.startsWith("accordionProperty_") || oldId.startsWith("collapseProperty_") || oldId.startsWith("headingProperty_")) {
-                     // Handle top-level property card and its main collapse/accordion
-                    if (oldId.startsWith("propertyDef_")) $(this).attr('id', `propertyDef_${tableIndex}_${propertyIndex}`);
-                    else if (oldId.startsWith("fkOptions_")) $(this).attr('id', `fkOptions_${tableIndex}_${propertyIndex}`);
-                    else if (oldId.startsWith("accordionProperty_")) $(this).attr('id', `accordionProperty_${tableIndex}_${propertyIndex}`);
-                    else if (oldId.startsWith("collapseProperty_")) $(this).attr('id', `collapseProperty_${tableIndex}_${propertyIndex}`);
-                    else if (oldId.startsWith("headingProperty_")) $(this).attr('id', `headingProperty_${tableIndex}_${propertyIndex}`);
-                 }
-            });
-            $(propertyElement).find('label[for]').each(function() {
-                 const oldFor = $(this).attr('for');
-                 if (oldFor && oldFor.includes("__Properties_") && oldFor.includes("__")) {
-                    const propSpecificFor = oldFor.substring(oldFor.lastIndexOf("__Properties_") + "__Properties_".length).substring(oldFor.substring(oldFor.lastIndexOf("__Properties_") + "__Properties_".length).indexOf("__") + 2)
-                    $(this).attr('for', `${baseId}${propSpecificFor}`);
-                }
-            });
-            $(propertyElement).find('span[data-valmsg-for]').each(function() {
-                const oldValMsgFor = $(this).attr('data-valmsg-for');
-                 if (oldValMsgFor && oldValMsgFor.includes("Properties[") && oldValMsgFor.includes("].")) {
-                    const propSpecificVal = oldValMsgFor.substring(oldValMsgFor.lastIndexOf("].") + 2);
-                    $(this).attr('data-valmsg-for', `${baseName}.${propSpecificVal}`);
+                if (oldName) { // Chỉ xử lý nếu có thuộc tính name
+                    const nameSuffix = oldName.substring(oldName.lastIndexOf("].") + 2);
+                    $(this).attr('name', `${baseName}.${nameSuffix}`);
                 }
             });
 
-            $(propertyElement).find('.remove-property-btn, .fk-checkbox').attr('data-property-index', propertyIndex).attr('data-table-index', tableIndex);
-            
-            const mainCollapseTarget = `collapseProperty_${tableIndex}_${propertyIndex}`;
-            const mainHeadingTarget = `headingProperty_${tableIndex}_${propertyIndex}`;
-            $(propertyElement).find('.card-header').attr({
-                'id': mainHeadingTarget,
-                'data-bs-target': `#${mainCollapseTarget}`,
-                'aria-controls': mainCollapseTarget
-            });
-             // Ensure the main collapse div gets the correct data-bs-parent
-            $(propertyElement).find('.card-body.accordion-collapse').not('.accordion .accordion-collapse').attr({
-                'id': mainCollapseTarget,
-                'aria-labelledby': mainHeadingTarget,
-                'data-bs-parent': `#tablesContainer_${tableIndex}_PropertiesContainer` // Corrected parent
+            // Cập nhật thuộc tính 'id' và 'label for'
+            $propertyElementJQ.find('[id*="__Properties_"]').each(function() {
+                const oldId = $(this).attr('id');
+                if (oldId) {
+                    const idSuffixMatch = oldId.match(/__Properties_\d+__(.*)/);
+                    if (idSuffixMatch && idSuffixMatch[1]) {
+                        const newId = `${baseId}${idSuffixMatch[1]}`;
+                        $(this).attr('id', newId);
+                        // Cập nhật label tương ứng nếu có
+                        $propertyElementJQ.find(`label[for="${oldId}"]`).attr('for', newId);
+                    }
+                }
             });
             
+            // Cập nhật data-valmsg-for cho các span validation
+            $propertyElementJQ.find('span[data-valmsg-for*="Properties["]').each(function() {
+                const oldValMsgFor = $(this).attr('data-valmsg-for');
+                if (oldValMsgFor) {
+                    const valMsgSuffix = oldValMsgFor.substring(oldValMsgFor.lastIndexOf("].") + 2);
+                    $(this).attr('data-valmsg-for', `${baseName}.${valMsgSuffix}`);
+                }
+            });
+
+            // Cập nhật data-table-index và data-property-index cho các nút và checkbox cụ thể
+            $propertyElementJQ.find('.remove-property-btn, .fk-checkbox')
+                            .attr('data-property-index', propertyIndex)
+                            .attr('data-table-index', tableIndex);
+            
+            // Cập nhật IDs và targets cho card header và collapse của property
+            const mainCollapseId = `collapseProperty_${tableIndex}_${propertyIndex}`;
+            const mainHeadingId = `headingProperty_${tableIndex}_${propertyIndex}`;
+            $propertyElementJQ.find('.card-header').first().attr({ // Chỉ card-header của property-def
+                'id': mainHeadingId,
+                'data-bs-target': `#${mainCollapseId}`,
+                'aria-controls': mainCollapseId
+            });
+            $propertyElementJQ.find('.card-body.accordion-collapse').first().attr({ // Chỉ card-body của property-def
+                'id': mainCollapseId,
+                'aria-labelledby': mainHeadingId,
+                'data-bs-parent': `#tablesContainer_${tableIndex}_PropertiesContainer`
+            });
+
+            // Cập nhật IDs cho accordion bên trong (FK, Validation, Config)
             const accordionParentId = `accordionProperty_${tableIndex}_${propertyIndex}`;
-            $(propertyElement).find('.accordion').attr('id', accordionParentId); // Set ID for the inner accordion
-            $(propertyElement).find('.accordion-item').each(function(idx, item) {
+            $propertyElementJQ.find('.accordion').first().attr('id', accordionParentId); // Accordion chính bên trong property
+            $propertyElementJQ.find('.accordion-item').each(function(idx, item) {
                 let itemType = '';
                 const buttonText = $(item).find('button.accordion-button').text().trim();
                 if (buttonText.includes('Khóa Ngoại')) itemType = 'Fk';
@@ -557,28 +568,33 @@
                 const headingId = `heading${itemType}_${tableIndex}_${propertyIndex}`;
 
                 $(item).find('.accordion-header').attr('id', headingId);
-                $(item).find('.accordion-button').attr({'data-bs-target': `#${collapseId}`, 'aria-controls': collapseId });
+                $(item).find('button.accordion-button').attr({'data-bs-target': `#${collapseId}`, 'aria-controls': collapseId });
                 $(item).find('.accordion-collapse').attr({'id': collapseId, 'aria-labelledby': headingId, 'data-bs-parent': `#${accordionParentId}` });
             });
 
-            $(propertyElement).find('.remove-property-btn').prop('disabled', $(`.properties-container[data-table-index='${tableIndex}'] .property-def`).length <= 1);
+            // Kích hoạt/Vô hiệu hóa nút xóa thuộc tính
+            $propertyElementJQ.find('.remove-property-btn').prop('disabled', $propertyElementJQ.siblings('.property-def').length === 0 && $propertyElementJQ.parent().find('.property-def').length <=1);
 
-            const selectedDataType = $(propertyElement).find('.data-type-selector').val();
-            toggleValidationAndConfigFields(propertyElement, selectedDataType);
+            // Khởi tạo Select2 cho DataType và DeleteBehavior trong propertyElement này
+            const $dataTypeSelector = $propertyElementJQ.find('select[name$=".DataType"]');
+            if ($dataTypeSelector.data('select2')) { $dataTypeSelector.select2('destroy'); }
+            $dataTypeSelector.select2({ theme: "bootstrap-5", dropdownParent: $dataTypeSelector.closest('.prop-col') });
+
+            const $deleteBehaviorSelector = $propertyElementJQ.find('select[name$=".DeleteBehavior"]');
+            if ($deleteBehaviorSelector.data('select2')) { $deleteBehaviorSelector.select2('destroy'); }
+            $deleteBehaviorSelector.select2({ theme: "bootstrap-5", dropdownParent: $deleteBehaviorSelector.closest('.col-md-6') });
             
-            const $refTableDropdown = $(propertyElement).find('.referenced-table-dropdown');
-            if ($refTableDropdown.data('select2')) { $refTableDropdown.select2('destroy'); }
+            // Populate dropdown bảng tham chiếu cho thuộc tính này
+            const $refTableDropdown = $propertyElementJQ.find('select[name$=".ReferencedTableName"]');
             populateReferencedTableDropdown($refTableDropdown, tableIndex);
 
-            const $dataTypeSelector = $(propertyElement).find('.card-header .data-type-selector');
-            if ($dataTypeSelector.data('select2')) { $dataTypeSelector.select2('destroy'); }
-            $dataTypeSelector.select2({ theme: "bootstrap-5", dropdownParent: $(propertyElement).find('.card-header .prop-col:has(.data-type-selector)') });
+            // Lấy giá trị DataType hiện tại và cập nhật các trường validation/config
+            const selectedDataType = $dataTypeSelector.val();
+            toggleValidationAndConfigFields(propertyElement, selectedDataType); // toggleValidationAndConfigFields nhận DOM element
 
-            const $deleteBehaviorSelector = $(propertyElement).find('.delete-behavior-selector');
-             if ($deleteBehaviorSelector.data('select2')) { $deleteBehaviorSelector.select2('destroy'); }
-             $deleteBehaviorSelector.select2({ theme: "bootstrap-5", dropdownParent: $(propertyElement).find('.fk-options .col-md-6:has(.delete-behavior-selector)') });
+            // Gọi hàm xử lý logic UI mới sau khi đã re-index và khởi tạo xong
+            refreshPropertyCardUI($propertyElementJQ); // Truyền đối tượng jQuery
         }
-
         function reindexPropertiesForTable(tableIndex) {
              $(`.properties-container[data-table-index='${tableIndex}']`).attr('id', `tablesContainer_${tableIndex}_PropertiesContainer`);
             $(`.properties-container[data-table-index='${tableIndex}'] .property-def`).each(function (propIdx) {
@@ -587,31 +603,22 @@
         }
 
         function reindexTables() {
-            $('#tablesContainer .table-def').each(function (idx) {
-                $(this).attr('data-table-index', idx);
-                $(this).find('.card-header h4').html(`Bảng ${idx + 1}: <span class="table-name-display fw-normal">${$(this).find('.table-name-input').val() || `Bảng ${idx + 1}`}</span>`);
-                let tableNameInput = $(this).find('.table-name-input');
-                let currentTableName = tableNameInput.val();
-                $(this).find('.table-name-display').text(currentTableName || `Bảng ${idx + 1}`);
+            $('#tablesContainer .table-def').each(function(tableIdx) {
+                const $table = $(this);
+                // Update data attribute for index
+                $table.attr('data-table-index', tableIdx);
 
-                tableNameInput.attr('name', `Tables[${idx}].TableName`).attr('id', `Tables_${idx}__TableName`);
-                $(this).find(`label[for^="Tables_"][for$="__TableName"]`).attr('for', `Tables_${idx}__TableName`);
-                 $(this).find(`label[id^="label_Tables_"]`).attr('id', `label_Tables_${idx}__TableName`); // Update label id as well
-                $(this).find(`span[data-valmsg-for^="Tables["][data-valmsg-for$=".TableName"]`).attr('data-valmsg-for', `Tables[${idx}].TableName`);
+                // Update name/id attributes for table name input (đảm bảo là TableName)
+                $table.find('.table-name-input').attr('name', `Tables[${tableIdx}].TableName`);
+                $table.find('.table-name-input').attr('id', `table-name-${tableIdx}`);
 
-                $(this).find('input[name$=".EnableSoftDelete"][type="checkbox"]').attr({
-                    'name': `Tables[${idx}].EnableSoftDelete`,
-                    'id': `Tables_${idx}__EnableSoftDelete_Checkbox`
-                });
-                $(this).find('label[for$="__EnableSoftDelete_Checkbox"]').attr('for', `Tables_${idx}__EnableSoftDelete_Checkbox`);
-                $(this).find('input[name$=".EnableSoftDelete"][type="hidden"]').attr('name', `Tables[${idx}].EnableSoftDelete`);
+                // Reindex properties within this table
+                reindexProperties($table.find('.properties-container'));
 
-                $(this).find('.remove-table-btn, .add-property-btn, .properties-container, .property-search-input').attr('data-table-index', idx);
-                reindexPropertiesForTable(idx);
+                // Update accordion header/collapse IDs and data-bs-target
+                $table.find('.accordion-header button').attr('data-bs-target', `#collapse-${tableIdx}`);
+                $table.find('.accordion-collapse').attr('id', `collapse-${tableIdx}`);
             });
-            initializeSortableForAllTables();
-            $('#tablesContainer .remove-table-btn').prop('disabled', $('#tablesContainer .table-def').length <= 1);
-            updateAllReferencedTableDropdowns();
         }
 
         $('#tablesContainer').on('input', '.table-name-input', function () {
@@ -869,7 +876,7 @@
                 complete: function() {
                     // Re-disable FK fields if their checkbox is not checked after submission attempt
                      $('#tablesContainer .fk-checkbox:not(:checked)').each(function() {
-                        $(this).closgn-body').find('.fk-options input, .fk-options select').prop('disabled', true);
+                        $(this).closest('.accordion-body').find('.fk-options input, .fk-options select').prop('disabled', true);
                     });
                 }
             });
@@ -952,11 +959,15 @@
 
                     if (!propName) return;
 
-                    // Build property line
+                    // Build property line (Mermaid chỉ cho 1 attribute)
                     let propSyntax = `        ${dataType} ${propName}`;
-                    if (isPrimaryKey) propSyntax += ' PK';
-                    if (isForeignKey) propSyntax += ' FK';
-                    if (!isNullable) propSyntax += ' not null';
+                    if (isPrimaryKey) {
+                        propSyntax += ' PK';
+                    } else if (isForeignKey) {
+                        propSyntax += ' FK';
+                    } else if (!isNullable) {
+                        propSyntax += ' not null';
+                    }
                     diagramSyntax += propSyntax + '\n';
                 });
 
@@ -1055,6 +1066,431 @@
                 $newPropElement.find('.fk-checkbox').trigger('change');
                 reindexPropertiesForTable(tableIndex);
             });
+        });
+
+        $('#parseSqlBtn').click(function() {
+            const sql = $('#sqlInput').val();
+            if (!sql.trim()) {
+                alert('Vui lòng nhập code SQL!');
+                return;
+            }
+            const tables = generateFromSQL(sql);
+            if (tables.length === 0) {
+                alert('Không tìm thấy bảng nào trong SQL!');
+                return;
+            }
+            fillTablesToUI(tables);
+            console.log('Kết quả generate từ SQL:', tables);
+            alert('Đã generate bảng và thuộc tính vào UI! Bạn có thể chỉnh sửa lại rồi bấm \"Tạo Mã\" để tải code.');
+            // Đặt scroll ở đây!
+            $('html, body').animate({
+                scrollTop: $('#tablesContainer').offset().top - 50
+            }, 500);
+        });
+
+   function fillTablesToUI(parsedTables) {
+    $('#tablesContainer').hide().empty();
+
+    if (!parsedTables || parsedTables.length === 0) return;
+
+    // Build bảng trước, chưa build thuộc tính
+    let html = '';
+    parsedTables.forEach((tableData, tableIdx) => {
+        let tableHtml = $('#tableTemplate').html()
+            .replace(/__TABLE_INDEX__/g, tableIdx)
+            .replace(/__TABLE_NUMBER__/g, tableIdx + 1);
+        html += tableHtml;
+    });
+    $('#tablesContainer').html(html);
+
+    // Sau đó mới build thuộc tính cho từng bảng
+    parsedTables.forEach((tableData, tableIdx) => {
+        const $table = $('#tablesContainer .table-def').eq(tableIdx);
+        const $propertiesContainer = $table.find('.properties-container');
+        $propertiesContainer.empty();
+        if (tableData.properties && tableData.properties.length > 0) {
+            tableData.properties.forEach((propData, propIdx) => {
+                let propertyHtml = $('#propertyTemplate').html()
+                    .replace(/__TABLE_INDEX__/g, tableIdx)
+                    .replace(/__PROP_INDEX__/g, propIdx);
+                let $prop = $(propertyHtml);
+                $prop.find('input[name$=".PropertyName"]').val(propData.name);
+                $prop.find('select[name$=".DataType"]').html(dataTypeOptionsHtml).val(propData.csharpType);
+                $prop.find('input[name$=".IsPrimaryKey"]').first().prop('checked', propData.isPrimaryKey);
+                $prop.find('input[name$=".IsNullable"]').first().prop('checked', propData.isNullable);
+                $prop.find('input[name$=".IsForeignKey"]').first().prop('checked', propData.isForeignKey);
+                $prop.find('select[name$=".DeleteBehavior"]').html(deleteBehaviorOptionsHtml);
+                $prop.appendTo($propertiesContainer);
+            });
+        }
+    });
+
+    // Sau khi render xong, reindex lại 1 lần
+    reindexTables();
+    
+    // Gán lại giá trị tên bảng sau khi reindex và đảm bảo name đúng
+    parsedTables.forEach((tableData, tableIdx) => {
+        const $table = $('#tablesContainer .table-def').eq(tableIdx);
+        const $tableNameInput = $table.find('.table-name-input');
+        $tableNameInput.val(tableData.name).trigger('input');
+        $tableNameInput.attr('name', `Tables[${tableIdx}].TableName`);
+    });
+
+    $('#tablesContainer').show();
+}
+
+        // Hàm ánh xạ kiểu dữ liệu SQL sang C# (có thể mở rộng thêm)
+        function mapSqlTypeToCSharp(sqlType) {
+            const sType = sqlType.toLowerCase();
+            if (sType.includes('char') || sType.includes('text') || sType.startsWith('varchar') || sType.startsWith('nvarchar') || sType.startsWith('longtext')) return 'string';
+            if (sType.startsWith('int') || sType.startsWith('smallint') || sType.startsWith('tinyint')) return 'int';
+            if (sType.startsWith('bigint')) return 'long';
+            if (sType.startsWith('bit') || sType.startsWith('boolean') || sType === 'bool') return 'bool';
+            if (sType.startsWith('date') && !sType.includes('time')) return 'DateTime';
+            if (sType.startsWith('time') && !sType.includes('stamp')) return 'TimeSpan';
+            if (sType.includes('datetime') || sType.includes('timestamp')) return 'DateTime';
+            if (sType.startsWith('decimal') || sType.startsWith('numeric') || sType.startsWith('money') || sType.startsWith('smallmoney')) return 'decimal';
+            if (sType.startsWith('uniqueidentifier') || sType.startsWith('guid')) return 'Guid';
+            if (sType.startsWith('float')) return 'double';
+            if (sType.startsWith('real')) return 'float';
+            if (sType.includes('binary') || sType.includes('image') || sType.includes('rowversion')) return 'byte[]';
+            if (sType.startsWith('enum')) return 'string'; // Enum SQL nên map sang string hoặc tạo enum riêng
+            return 'string'; // Mặc định nếu không nhận diện được
+        }
+
+function generateFromSQL(sql) {
+    const tables = [];
+    // Regex để lấy tên bảng và khối định nghĩa của nó
+    // Hỗ trợ một số mệnh đề tùy chọn ở cuối như ENGINE, DEFAULT CHARSET cho MySQL
+    const tableRegex = /CREATE\s+TABLE\s+([`'"]?[\w\.]+[`'"]?)\s*\(([\s\S]+?)\)(?:\s*ENGINE\s*=\s*\w+\s*)?(?:DEFAULT\s+CHARSET\s*=\s*\w+\s*)?(?:COLLATE\s*=\s*\w+\s*)?;/gi;
+    let tableMatch;
+
+    while ((tableMatch = tableRegex.exec(sql)) !== null) {
+        let tableName = tableMatch[1].trim().replace(/[`'"]/g, '');
+        if (tableName.includes('.')) {
+            tableName = tableName.substring(tableName.lastIndexOf('.') + 1);
+        }
+        const definitionBlock = tableMatch[2];
+        const properties = []; // Đổi tên columns thành properties để khớp ViewModel
+        const pkColumnsInConstraint = new Set();
+
+        // Bước 1: Xác định các cột trong ràng buộc PRIMARY KEY (nếu có)
+        // Ví dụ: PRIMARY KEY (ID1, ID2)
+        const primaryKeyConstraintRegex = /PRIMARY\s+KEY\s*\(([^)]+)\)/gi;
+        let pkConstraintMatch;
+        while((pkConstraintMatch = primaryKeyConstraintRegex.exec(definitionBlock)) !== null) {
+            pkConstraintMatch[1].split(',').forEach(pkCol => pkColumnsInConstraint.add(pkCol.trim().replace(/[`'"]/g, '')));
+        }
+
+        // Tách khối định nghĩa thành các dòng riêng lẻ cho cột và ràng buộc
+        // Cải thiện regex tách dòng, tránh tách sai ở comment hoặc giá trị default
+        const lines = definitionBlock.split(/,(?=\s*[`'"]?(?:COLUMN|CONSTRAINT|PRIMARY KEY|FOREIGN KEY|UNIQUE KEY|KEY\s|CHECK\s|\w+)[`'"]?)|,\r?\n/gm);
+
+        lines.forEach(lineContent => {
+            let line = lineContent.trim();
+            if (!line || line.toUpperCase().startsWith('CONSTRAINT') || line.toUpperCase().startsWith('PRIMARY KEY') || line.toUpperCase().startsWith('FOREIGN KEY') || line.toUpperCase().startsWith('UNIQUE') || line.toUpperCase().startsWith('CHECK')) {
+                // Bỏ qua các dòng định nghĩa constraint riêng biệt ở bước này, sẽ xử lý FK sau
+                 if (line.toUpperCase().startsWith('PRIMARY KEY') && !line.includes('(')) {
+                    // Xử lý trường hợp PRIMARY KEY được định nghĩa inline nhưng không có tên cột (hiếm)
+                    // Hoặc nếu đây là định nghĩa PK cho cột cuối cùng mà không có dấu phẩy
+                 } else {
+                    return;
+                 }
+            }
+
+            // Regex cho định nghĩa cột (tên, kiểu, các ràng buộc inline)
+            // ([`'"]?[\w]+[`'"]?) : Tên cột
+            // ([\w\s\(\),\.:]+?) : Kiểu dữ liệu SQL (có thể có khoảng trắng, dấu ngoặc cho precision/scale)
+            // ((?:\s+(?:NOT\s+NULL|NULL|PRIMARY\s+KEY|UNIQUE(?: KEY)?|DEFAULT\s?(?:'[^']*'|"[^"]*"|[\w\.-]+|\(\)|CURRENT_TIMESTAMP)|CHECK\s*\([^)]+\)|AUTO_INCREMENT|IDENTITY(?:\(\d+,\s*\d+\))?|COMMENT\s+(?:'[^']*'|"[^"]*"))+)*) : Các ràng buộc còn lại
+            const colRegex = /^([`'"]?[\w]+[`'"]?)\s+([a-zA-Z0-9_\(\),\.\[\]]+)(.*)$/i;
+            const colMatch = line.match(colRegex);
+
+            if (colMatch) {
+                const colName = colMatch[1].replace(/[`'"]/g, '');
+                const colSqlType = colMatch[2].trim();
+                const colConstraints = (colMatch[3] || "").toUpperCase();
+
+                // Debug
+                console.log('colName:', colName, 'colSqlType:', colSqlType, 'map:', mapSqlTypeToCSharp(colSqlType));
+
+                const isPrimaryKey = pkColumnsInConstraint.has(colName) || colConstraints.includes("PRIMARY KEY");
+                const isNotNull = colConstraints.includes("NOT NULL") || isPrimaryKey; // PK luôn NOT NULL
+
+                properties.push({
+                    name: colName,
+                    sqlType: colSqlType,
+                    csharpType: mapSqlTypeToCSharp(colSqlType),
+                    isPrimaryKey: isPrimaryKey,
+                    isNullable: !isNotNull,
+                    isForeignKey: false, // Sẽ cập nhật ở bước sau
+                    referencedTableName: null,
+                    // referencedColumnName: null, // Thường không cần cho việc tạo model EF từ UI này
+                });
+            }
+        });
+
+        // Bước 2: Xác định các ràng buộc FOREIGN KEY
+        const fkRegex = /(?:CONSTRAINT\s+[`'"]?[\w]+[`'"]?\s+)?FOREIGN\s+KEY\s*\(([`'"]?[\w]+[`'"]?)\)\s*REFERENCES\s+([`'"]?[\w\.]+[`'"]?)\s*\(([`'"]?[\w]+[`'"]?)\)/gi;
+        let fkMatch;
+        fkRegex.lastIndex = 0; // Reset lastIndex cho global regex
+        while ((fkMatch = fkRegex.exec(definitionBlock)) !== null) {
+            const fkColumnName = fkMatch[1].replace(/[`'"]/g, '');
+            let refTableName = fkMatch[2].replace(/[`'"]/g, '');
+            if (refTableName.includes('.')) { // Xử lý schema.table
+                refTableName = refTableName.substring(refTableName.lastIndexOf('.') + 1);
+            }
+            // const refPkColumnName = fkMatch[3].replace(/[`'"]/g, ''); // Tên cột PK ở bảng tham chiếu
+
+            const propertyToUpdate = properties.find(p => p.name.toLowerCase() === fkColumnName.toLowerCase());
+            if (propertyToUpdate) {
+                propertyToUpdate.isForeignKey = true;
+                propertyToUpdate.referencedTableName = refTableName;
+                // propertyToUpdate.referencedColumnName = refPkColumnName; // Có thể lưu nếu cần
+            }
+        }
+        if (properties.length > 0) {
+             tables.push({ name: tableName, properties: properties });
+        }
+    }
+    return tables;
+}
+
+        $('html, body').animate({
+            scrollTop: $('#tablesContainer').offset().top - 50
+        }, 500);
+
+        // Delegate event handlers to tablesContainer to handle dynamically added elements
+        $('#tablesContainer').on('change', '.property-type-input', function() {
+            // Tìm phần tử cha .property-item của input type
+            const $prop = $(this).closest('.property-item');
+            updatePropertyControls($prop);
+        });
+
+        $('#tablesContainer').on('change', '.is-pk-checkbox, .is-fk-checkbox, .is-nullable-checkbox', function() {
+             // Tìm phần tử cha .property-item của checkbox
+             const $prop = $(this).closest('.property-item');
+             updatePropertyControls($prop);
+        });
+
+        // Handle Add Property button click using delegation
+        $('#tablesContainer').on('click', '.add-property-btn', function() {
+            const propertiesContainer = $(this).closest('.accordion-body').find('.properties-container');
+            const propertyTemplate = $('#propertyTemplate').html();
+            const $prop = $(propertyTemplate);
+            propertiesContainer.append($prop);
+            // Initialize controls for the newly added property
+            updatePropertyControls($prop);
+            reindexProperties(propertiesContainer);
+            // Scroll to the new property
+             $('html, body').animate({
+                scrollTop: $prop.offset().top - 100 // Scroll to the new property, adjust offset as needed
+            }, 300);
+
+        });
+
+        // Handle Remove Property button click using delegation
+        $('#tablesContainer').on('click', '.remove-property-btn', function() {
+            const propertiesContainer = $(this).closest('.properties-container');
+            $(this).closest('.property-item').remove();
+            reindexProperties(propertiesContainer);
+        });
+
+        // Handle Remove Table button click using delegation
+        $('#tablesContainer').on('click', '.remove-table-btn', function() {
+            $(this).closest('.table-def').remove();
+            reindexTables();
+        });
+
+        // Reindex properties within a single table
+        function reindexProperties(propertiesContainer) {
+            propertiesContainer.find('.property-item').each(function(propertyIdx) {
+                const $prop = $(this);
+                // Update data attribute for index
+                $prop.data('property-index', propertyIdx);
+                // Update name/id attributes for inputs (optional but good practice)
+                // Example: <input name="Tables[0].Properties[0].Name" ...>
+                const tableIdx = $prop.closest('.table-def').data('table-index');
+                $prop.find('[name^="property."]').each(function(){
+                     const oldName = $(this).attr('name');
+                     const newName = `Tables[${tableIdx}].Properties[${propertyIdx}].${oldName.split('.')[1]}`; // Assuming name format is property.Name, property.Type, etc.
+                     $(this).attr('name', newName);
+                });
+
+                 $prop.find('[name^="Tables["][name$="].Name"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].Name`);
+                 $prop.find('[name^="Tables["][name$="].Type"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].Type`);
+                 $prop.find('[name^="Tables["][name$="].IsPrimaryKey"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].IsPrimaryKey`);
+                 $prop.find('[name^="Tables["][name$="].IsNullable"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].IsNullable`);
+                 $prop.find('[name^="Tables["][name$="].IsForeignKey"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].IsForeignKey`);
+                 $prop.find('[name^="Tables["][name$="].ReferencesTable"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].ReferencesTable`);
+                 $prop.find('[name^="Tables["][name$="].ReferencesColumn"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].ReferencesColumn`);
+                 $prop.find('[name^="Tables["][name$="].NavigationPropertyName"]').attr('name', `Tables[${tableIdx}].Properties[${propertyIdx}].NavigationPropertyName`);
+
+                 // Update IDs as well if they are used elsewhere (optional)
+                 // Example: <input id="property-name-0-0" ...>
+                 $prop.find('[id^="property-name-"]').attr('id', `property-name-${tableIdx}-${propertyIdx}`);
+                 $prop.find('[id^="property-type-"]').attr('id', `property-type-${tableIdx}-${propertyIdx}`);
+                 // ... update other IDs if needed ...
+            });
+        }
+
+        // Reindex all tables
+        function reindexTables() {
+            $('#tablesContainer .table-def').each(function(tableIdx) {
+                const $table = $(this);
+                // Update data attribute for index
+                $table.attr('data-table-index', tableIdx);
+
+                // Update name/id attributes for table name input (đảm bảo là TableName)
+                $table.find('.table-name-input').attr('name', `Tables[${tableIdx}].TableName`);
+                $table.find('.table-name-input').attr('id', `table-name-${tableIdx}`);
+
+                // Reindex properties within this table
+                reindexProperties($table.find('.properties-container'));
+
+                // Update accordion header/collapse IDs and data-bs-target
+                $table.find('.accordion-header button').attr('data-bs-target', `#collapse-${tableIdx}`);
+                $table.find('.accordion-collapse').attr('id', `collapse-${tableIdx}`);
+            });
+        }
+
+        // Initial setup on document ready
+        $(document).ready(function() {
+            setupEventHandlers(); // Setup initial event handlers
+            reindexTables(); // Initial reindex on page load if any tables exist
+        });
+
+        // Function to setup all event handlers (called on document ready and after fillTablesToUI)
+        function setupEventHandlers() {
+             // Remove previous delegated handlers to avoid duplicates
+             $('#tablesContainer').off('change', '.property-type-input, .is-pk-checkbox, .is-fk-checkbox, .is-nullable-checkbox');
+             $('#tablesContainer').off('click', '.add-property-btn, .remove-property-btn, .remove-table-btn');
+
+             // Delegate change events for property inputs/checkboxes
+             $('#tablesContainer').on('change', '.property-type-input', function() {
+                const $prop = $(this).closest('.property-item');
+                refreshPropertyCardUI($prop);
+            });
+
+            $('#tablesContainer').on('change', '.is-pk-checkbox, .is-fk-checkbox, .is-nullable-checkbox', function() {
+                 const $prop = $(this).closest('.property-item');
+                 refreshPropertyCardUI($prop);
+            });
+
+            // Delegate click events for buttons
+            $('#tablesContainer').on('click', '.add-property-btn', function() {
+                const propertiesContainer = $(this).closest('.accordion-body').find('.properties-container');
+                const propertyTemplate = $('#propertyTemplate').html();
+                const $prop = $(propertyTemplate);
+                propertiesContainer.append($prop);
+                refreshPropertyCardUI($prop);
+                reindexProperties(propertiesContainer);
+                 $('html, body').animate({
+                    scrollTop: $prop.offset().top - 100
+                }, 300);
+            });
+
+            $('#tablesContainer').on('click', '.remove-property-btn', function() {
+                const propertiesContainer = $(this).closest('.properties-container');
+                $(this).closest('.property-item').remove();
+                reindexProperties(propertiesContainer);
+            });
+
+            $('#tablesContainer').on('click', '.remove-table-btn', function() {
+                $(this).closest('.table-def').remove();
+                reindexTables();
+            });
+
+            // Event handler for "Phân tích & Generate"
+            $('#parseSqlBtn').off('click'); // Remove previous handler
+            $('#parseSqlBtn').on('click', function() {
+                const sql = $('#sqlInput').val();
+                if (!sql.trim()) {
+                    alert('Vui lòng nhập code SQL!');
+                    return;
+                }
+                const tables = generateFromSQL(sql);
+                if (tables.length === 0) {
+                    alert('Không tìm thấy bảng nào trong SQL!');
+                    return;
+                }
+                fillTablesToUI(tables);
+                console.log('Kết quả generate từ SQL:', tables);
+                // alert('Đã generate bảng và thuộc tính vào UI! Bạn có thể chỉnh sửa lại rồi bấm "Tạo Mã" để tải code.');
+            });
+        }
+
+   // ĐỔI TÊN HÀM NÀY (bắt đầu từ khoảng dòng 1707 trong file của bạn)
+// và đảm bảo các selectors bên trong là chính xác
+function refreshPropertyCardUI($propJQuery) { // Đổi tên hàm và tham số
+    // Quan trọng: $propJQuery ở đây PHẢI LÀ một đối tượng jQuery của một '.property-def'
+    
+    // Lấy giá trị từ các input/select bên trong $propJQuery
+    // Đảm bảo các selector này chính xác với cấu trúc HTML của bạn trong propertyTemplate
+    const dataType = $propJQuery.find('select[name$=".DataType"]').val(); 
+    const isPk = $propJQuery.find('input[name$=".IsPrimaryKey"][type="checkbox"]').is(':checked');
+    const isForeignKey = $propJQuery.find('input[name$=".IsForeignKey"][type="checkbox"]').is(':checked');
+    // const isNullable = $propJQuery.find('input[name$=".IsNullable"][type="checkbox"]').is(':checked'); // isNullable được kiểm soát bởi PK
+
+    const $accordionBody = $propJQuery.find('.card-body.accordion-collapse .accordion-body').first(); // Lấy accordion-body gần nhất
+
+    // Các khu vực tùy chọn
+    const $stringValidationFields = $accordionBody.find('.string-validation');
+    const $numericValidationFields = $accordionBody.find('.numeric-validation');
+    const $byteArrayOptions = $accordionBody.find('.byte-array-option'); // Trong phần config
+    const $fkOptionsDiv = $accordionBody.find('.fk-options');
+
+    // Ẩn/hiện các trường validation dựa trên DataType
+    // (Giữ nguyên logic toggleValidationAndConfigFields nếu nó hoạt động tốt, hoặc tích hợp vào đây)
+    // Ví dụ đơn giản:
+    if ($stringValidationFields.length) $stringValidationFields.toggle(dataType === 'string');
+    if ($numericValidationFields.length) $numericValidationFields.toggle(['int', 'long', 'decimal', 'double', 'float'].includes(dataType));
+    if ($byteArrayOptions.length) $byteArrayOptions.toggle(dataType === 'byte[]');
+
+
+    // Logic xử lý UI cho PK, FK, Nullable (ví dụ)
+    const $isFkCheckbox = $propJQuery.find('input[name$=".IsForeignKey"][type="checkbox"]');
+    const $isNullableCheckbox = $propJQuery.find('input[name$=".IsNullable"][type="checkbox"]');
+    const $hiddenNullableInput = $isNullableCheckbox.siblings('input[type="hidden"][name$=".IsNullable"]');
+
+    if (isPk) {
+        $isFkCheckbox.prop('checked', false).prop('disabled', true).trigger('change'); // Trigger change để ẩn fk-options
+        $isNullableCheckbox.prop('checked', false).prop('disabled', true);
+    } else {
+        $isFkCheckbox.prop('disabled', false);
+        // Logic ẩn/hiện fkOptions đã có trong event 'change' của '.fk-checkbox', không cần lặp lại ở đây trừ khi muốn ép buộc.
+        // Nếu $isFkCheckbox được check, fkOptions sẽ hiện ra.
+        $isNullableCheckbox.prop('disabled', false);
+    }
+    
+    // Cập nhật trạng thái của hidden input cho IsNullable
+    $hiddenNullableInput.prop('disabled', $isNullableCheckbox.is(':checked'));
+}
+
+        $('#tablesContainer .table-def').each(function() {
+            const $tableNameInput = $(this).find('.table-name-input');
+            $tableNameInput.trigger('input');
+        });
+
+        $('#tablesContainer .referenced-table-dropdown').each(function() {
+            if ($(this).data('select2')) {
+                $(this).trigger('change.select2');
+            }
+        });
+
+        // Gọi reindexTables một lần sau khi tất cả các bảng từ SQL đã được cấu hình cơ bản.
+        reindexTables();
+
+        // Trigger lại input cho tên bảng để cập nhật UI
+        $('#tablesContainer .table-def').each(function() {
+            const $tableNameInput = $(this).find('.table-name-input');
+            $tableNameInput.trigger('input');
+        });
+
+        // Trigger lại change cho các dropdown referenced table
+        $('#tablesContainer .referenced-table-dropdown').each(function() {
+            if ($(this).data('select2')) {
+                $(this).trigger('change.select2');
+            }
         });
     </script>
 

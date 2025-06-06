@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MvcDynamicCodeGenerator")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+45e8b4ec0c391e7b05cd6f66e855ad9f9a67e11c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+da1745353683329ce0c968f1d18f78fd2fc8c71b")]
 [assembly: System.Reflection.AssemblyProductAttribute("MvcDynamicCodeGenerator")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MvcDynamicCodeGenerator")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
